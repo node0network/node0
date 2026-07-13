@@ -1,0 +1,38 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Database files (local test databases)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite3
+
+# Environment files (contains GEMINI_API_KEY, BREVO_API_KEY, DASH_USER, etc.)
+.env
+.env.*
+.secrets
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+
+# IDE files
+.vscode/
+.idea/
+
+# Local logs
+*.log
+
+# State retention files
+alert_state.json
+*.json.tmp
+
+# Backups and temporary files
+*.bak
+*_backup*
+*backup_*
