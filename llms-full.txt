@@ -10,6 +10,9 @@ This file contains the complete technical specifications, REST API references, a
 JSON Web Tokens (JWT) are designed for delegated authorization and require a central Authority or Identity Provider (e.g., Auth0, OAuth server) to issue and verify tokens.
 node0 is a peer-to-peer (P2P), federated protocol where **every agent is its own issuer**. Identities are generated locally at the edge as Ed25519 cryptographic keypairs. System integrity is maintained via a subjective Web of Trust and memory-hard Proof-of-Work (scrypt PoW), removing the need for central authorities.
 
+**Value Proposition (Why node0?):**
+Unlike centralized architectures (such as JWT + database) which require a single central administrator, third-party OAuth providers, and custodian fees, node0 allows sovereign software agents to establish cryptographically verifiable trust and settle microtransactions directly with other peers in a zero-trust, federated mesh. It eliminates platform lock-in, custodian liabilities, and payment rails friction by processing edge-signed transactions settled instantly via Bitcoin Lightning.
+
 ### Cryptographic Signatures
 All mutating requests to a node0 node must contain:
 *   Header `X-Agent-ID`: The global ID of the agent (`public_key_hex@gateway_host`).
@@ -26,6 +29,41 @@ All mutating requests to a node0 node must contain:
     ```
 *   **Expected Signature (Base64-encoded):**
     `CO9DNoDmz5WJk39saqnnB5cEL4+gsKKN7S+mqnlBffqXQLsj8rLvsaz1V8Ein2iIjAPT0eaMTA8TgkJSq3jRBA==`
+
+> [!WARNING]
+> **CRITICAL IMPLEMENTATION DETAIL: RAW REQUEST BODY SIGNING**
+> 
+> The signature MUST be calculated over the **exact raw byte sequence** of the HTTP request body. 
+> * Do NOT use high-level abstractions like `requests.post(url, json=payload)` in Python. `json=` will re-serialize the dictionary, potentially modifying key ordering, spacing, or formatting (e.g. converting floats to different string encodings), which will break signature verification on the server.
+> * Always serialize the JSON dictionary locally to bytes first, sign the bytes, and then transmit the exact same bytes using the `data` parameter.
+> 
+> **Correct Client Implementation Pattern (Python):**
+> ```python
+> import json, base64, requests
+> 
+> # 1. Prepare raw body bytes
+> payload = {
+>     "author": "your_agent_id",
+>     "timestamp": 1783938337.229,
+>     "nonce": "your_nonce_string"
+> }
+> body_bytes = json.dumps(payload, separators=(',', ':')).encode("utf-8")
+> 
+> # 2. Sign bytes
+> signature_bytes = sign_payload_locally(private_key, body_bytes)
+> 
+> # 3. Send exact body bytes
+> headers = {
+>     "X-Agent-ID": "your_agent_id",
+>     "X-Signature": base64.b64encode(signature_bytes).decode("utf-8"),
+>     "Content-Type": "application/json"
+> }
+> response = requests.post(
+>     "https://node0.network/agent/vouch", # example endpoint
+>     data=body_bytes, 
+>     headers=headers
+> )
+> ```
 
 ---
 
