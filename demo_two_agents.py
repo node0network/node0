@@ -125,7 +125,7 @@ def run_demo():
             # ASSERTION 5: BOLT11 HRP and Bech32 character exclusions (no 1, b, i, o in data part)
             assert bolt11.startswith("lnbc"), "BOLT11 HRP prefix must be lnbc for bitcoin mainnet"
             hrp, data_part = bolt11.rsplit("1", 1)
-            bech32_chars = "qpzry9x8gf2tvdw0s3jn54khce6mua7t"
+            bech32_chars = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
             assert all(c in bech32_chars for c in data_part), "BOLT11 data part must only contain valid bech32 characters"
             print("  [Assertion Passed] BOLT11 invoice complies with bech32 character exclusions.")
         else:

@@ -1248,7 +1248,7 @@ async def create_invoice(request: Request):
         import secrets, random
         preimage = secrets.token_hex(32)
         payment_hash = hashlib.sha256(bytes.fromhex(preimage)).hexdigest()
-        bech32_chars = "qpzry9x8gf2tvdw0s3jn54khce6mua7t"
+        bech32_chars = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
         data_part = "".join(random.choice(bech32_chars) for _ in range(50))
         bolt11 = f"lnbc{amount_sats}n1{data_part}"
         
