@@ -23,7 +23,41 @@ async def add_cache_control_header(request: Request, call_next):
         response.headers["Cache-Control"] = "public, max-age=86400"
     else:
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["X-Node0-Server-Time"] = f"{time.time():.3f}"
+    response.headers["X-Node0-Protocol-Version"] = "1"
+    response.headers["X-Node0-Pow-Difficulty"] = str(DIFFICULTY)
     return response
+
+class Node0Error(HTTPException):
+    def __init__(self, code: str, status: int, title: str,
+                 detail: str, retryable: bool = False, **extra):
+        self.code = code
+        self.title = title
+        self.retryable = retryable
+        self.extra = extra
+        super().__init__(status_code=status, detail=detail)
+
+@app.exception_handler(Node0Error)
+async def node0_error_handler(request: Request, exc: Node0Error):
+    body = {
+        "type": f"https://node0.network/errors/{exc.code.lower().replace('_','-')}",
+        "title": exc.title,
+        "status": exc.status_code,
+        "detail": exc.detail,
+        "instance": request.url.path,
+        "code": exc.code,
+        "retryable": exc.retryable,
+        **exc.extra,
+    }
+    headers = {
+        "X-Node0-Server-Time": f"{time.time():.3f}",
+        "X-Node0-Protocol-Version": "1",
+        "X-Node0-Pow-Difficulty": str(DIFFICULTY)
+    }
+    if "retry_after" in exc.extra:
+        headers["Retry-After"] = str(int(exc.extra["retry_after"]))
+    return JSONResponse(body, status_code=exc.status_code,
+                        headers=headers, media_type="application/problem+json")
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
@@ -265,14 +299,29 @@ def _check_freshness_and_nonce(conn, ts, nonce):
     try:
         tsf = float(ts)
     except (TypeError, ValueError):
-        raise HTTPException(status_code=400, detail="Invalid timestamp")
+        raise Node0Error("TIMESTAMP_MALFORMED", 400, "Invalid timestamp format", "Timestamp must be a float representing epoch seconds.", retryable=False)
     if abs(time.time() - tsf) > MAX_SKEW:
-        raise HTTPException(status_code=401, detail="Timestamp outside acceptable window")
+        raise Node0Error(
+            code="TIMESTAMP_SKEW",
+            status=400,
+            title="Request timestamp outside allowed clock skew",
+            detail=f"Timestamp {tsf} deviates too much from server time; max allowed skew is {MAX_SKEW}s.",
+            retryable=True,
+            server_time=time.time(),
+            max_skew_seconds=MAX_SKEW
+        )
     conn.execute("DELETE FROM used_nonces WHERE seen_at < ?", (time.time() - MAX_SKEW,))
     try:
         conn.execute("INSERT INTO used_nonces (nonce, seen_at) VALUES (?, ?)", (str(nonce), time.time()))
     except sqlite3.IntegrityError:
-        raise HTTPException(status_code=409, detail="Replay detected (nonce already used)")
+        raise Node0Error(
+            code="NONCE_REPLAYED",
+            status=409,
+            title="Replay detected (nonce already used)",
+            detail=f"The nonce '{nonce}' has already been processed within the last {MAX_SKEW}s.",
+            retryable=True,
+            nonce_ttl_seconds=MAX_SKEW
+        )
 
 async def _read_signed_body(request: Request):
     raw = await request.body()
@@ -363,7 +412,15 @@ async def verify_action(request: Request, agent_field: str, background_tasks: Ba
         pub.verify(signature, raw)
     except (InvalidSignature, ValueError):
         conn.close()
-        raise HTTPException(status_code=401, detail="Invalid signature")
+        import hashlib
+        raise Node0Error(
+            code="SIGNATURE_INVALID",
+            status=401,
+            title="Signature verification failed",
+            detail="Ed25519 verification failed against the raw request body. Sign the exact bytes you transmit; do not let your HTTP client re-serialize JSON.",
+            retryable=False,
+            body_sha256_received=hashlib.sha256(raw).hexdigest()
+        )
     try:
         _check_freshness_and_nonce(conn, ts, nonce)
         conn.commit()
@@ -389,8 +446,55 @@ async def register_agent(request: Request):
         raise HTTPException(status_code=400, detail="Missing 'public_key', 'timestamp' or 'nonce'")
     
     # Verify memory-hard Proof of Work
-    if not verify_scrypt_pow(public_key_hex, capabilities, ts, nonce):
-        raise HTTPException(status_code=400, detail="Invalid Proof of Work (too low difficulty or computation mismatch)")
+    max_pow_age = 600
+    try:
+        tsf = float(ts)
+    except (TypeError, ValueError):
+        tsf = 0.0
+    if abs(time.time() - tsf) > max_pow_age:
+        raise Node0Error(
+            code="POW_STALE",
+            status=400,
+            title="Proof of Work is stale",
+            detail=f"The timestamp of the Proof of Work ({tsf}) is older than the allowed age of {max_pow_age}s.",
+            retryable=True,
+            max_pow_age_seconds=max_pow_age
+        )
+
+    # Compute actual scrypt hash to check difficulty
+    password = f"{public_key_hex}{json.dumps(capabilities)}{ts}{nonce}".encode("utf-8")
+    salt = b"node0-sybil-proof-salt"
+    try:
+        key = hashlib.scrypt(password, salt=salt, n=16384, r=8, p=1, dklen=32)
+        key_hex = key.hex()
+    except Exception as e:
+        raise Node0Error(
+            code="POW_INVALID",
+            status=400,
+            title="Proof of Work computation failed",
+            detail=f"Failed to verify scrypt PoW: {str(e)}",
+            retryable=False,
+            password_template="{public_key_hex}{json.dumps(capabilities)}{timestamp}{nonce}"
+        )
+
+    # Count leading zeros in key_hex
+    leading_zeros = 0
+    for char in key_hex:
+        if char == '0':
+            leading_zeros += 1
+        else:
+            break
+
+    if leading_zeros < DIFFICULTY:
+        raise Node0Error(
+            code="POW_INSUFFICIENT",
+            status=403,
+            title="Proof of Work difficulty insufficient",
+            detail=f"Required difficulty is {DIFFICULTY} leading zeros, but provided PoW has {leading_zeros}.",
+            retryable=True,
+            required_difficulty=DIFFICULTY,
+            provided_difficulty=leading_zeros
+        )
         
     if not isinstance(capabilities, list) or not all(isinstance(c, str) for c in capabilities):
         raise HTTPException(status_code=400, detail="'capabilities' must be a list of strings")
