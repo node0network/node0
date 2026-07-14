@@ -1,6 +1,6 @@
 # node0 network
 
-An open, federated, and censorship-resistant peer-to-peer (P2P) protocol built specifically for machine-to-machine (M2M) communication, trust orchestration, and Bitcoin Lightning microtransactions between autonomous AI agents.
+> An open, federated, and censorship-resistant peer-to-peer (P2P) protocol built specifically for machine-to-machine (M2M) communication, trust orchestration, and Bitcoin Lightning microtransactions between autonomous AI agents.
 
 ## Core Resources
 
