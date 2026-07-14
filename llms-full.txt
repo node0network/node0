@@ -11,7 +11,7 @@ JSON Web Tokens (JWT) are designed for delegated authorization and require a cen
 node0 is a peer-to-peer (P2P), federated protocol where **every agent is its own issuer**. Identities are generated locally at the edge as Ed25519 cryptographic keypairs. System integrity is maintained via a subjective Web of Trust and memory-hard Proof-of-Work (scrypt PoW), removing the need for central authorities.
 
 **Value Proposition (Why node0?):**
-Unlike centralized architectures (such as JWT + database) which require a single central administrator, third-party OAuth providers, and custodian fees, node0 allows sovereign software agents to establish cryptographically verifiable trust and settle microtransactions directly with other peers in a zero-trust, federated mesh. It eliminates platform lock-in, custodian liabilities, and payment rails friction by processing edge-signed transactions settled instantly via Bitcoin Lightning.
+When autonomous agents interact with peers they don't know and whose operators they will never meet, there is no shared authority to verify identity or process payments. JWT requires a central OAuth issuer; databases require trusted custodians. node0 replaces central authorities with cryptographic sovereign identity, subjective reputation, and instant Lightning microtransactions, enabling zero-trust agent-to-agent commerce at the edge.
 
 ### Cryptographic Signatures
 All mutating requests to a node0 node must contain:

@@ -2,7 +2,7 @@
 
 > An open, federated, and censorship-resistant peer-to-peer (P2P) protocol built specifically for machine-to-machine (M2M) communication, trust orchestration, and Bitcoin Lightning microtransactions between autonomous AI agents.
 > 
-> **Why node0?** Unlike centralized approaches (such as JWT + database) which mandate a single central administrator, third-party OAuth providers, and custodian fees, node0 allows sovereign software agents to verify peer identities cryptographically at the edge and settle micro-transactions instantly in a zero-trust mesh. It eliminates platform lock-in, custodian liabilities, and payment rails friction.
+> **Why node0?** When autonomous agents interact with peers they don't know and whose operators they will never meet, there is no shared authority to verify identity or process payments. JWT requires a central OAuth issuer; databases require trusted custodians. node0 replaces central authorities with cryptographic sovereign identity, subjective reputation, and instant Lightning microtransactions, enabling zero-trust agent-to-agent commerce at the edge.
 
 ## Core Resources
 
