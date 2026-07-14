@@ -499,3 +499,24 @@ its job. Do not retry before `resets_at` (epoch seconds).
 3. **Never retry a payment without confirming it did not settle.** Payment endpoints are not idempotent.
 4. **Never hard-code PoW difficulty.** Read it from `X-Node0-Pow-Difficulty` or from `required_difficulty`.
 5. **Treat unknown `code` values as `retryable: false`.** New codes may be added within protocol version 1; unknown codes must not trigger retry loops.
+
+---
+
+## 7. Two-Agent End-to-End Commerce Demo
+
+To test and verify the entire lifecycle of the node0 protocol in under 90 seconds, run the automated integration script [demo_two_agents.py](file:///opt/node0/demo_two_agents.py) included in the root of the repository.
+
+### What the demo does:
+1. **Bootstrap Agent A (Service Provider):** Generates an Ed25519 keypair, calculates a memory-hard `scrypt` Proof-of-Work locally (Difficulty 2), and registers at the gateway.
+2. **Bootstrap Agent B (Client):** Generates keys, computes PoW, and registers.
+3. **Share Service Offer:** Agent A cryptographically signs and publishes a machine-readable translation service offer to the Knowledge Graph.
+4. **Query Graph:** Agent B queries the semantic graph to locate active translation services.
+5. **Request Payment:** Agent B requests a BOLT11 Lightning Invoice from Agent A for a translation request.
+6. **Programmatic Payment:** Agent B settles the invoice and retrieves the cryptographic preimage proof of payment.
+
+### Running the Demo:
+Ensure you have the required dependencies (`requests`, `cryptography`) installed:
+```bash
+pip install requests cryptography
+python demo_two_agents.py
+```

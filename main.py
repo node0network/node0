@@ -436,6 +436,7 @@ async def startup():
     init_db()
 
 @app.post("/agent/register")
+@app.post("/v1/agent/register")
 async def register_agent(request: Request):
     raw, signature, data = await _read_signed_body(request)
     public_key_hex = data.get("public_key")
@@ -713,6 +714,7 @@ async def list_claims():
     return [dict(r) for r in rows]
 
 @app.post("/knowledge/share")
+@app.post("/v1/knowledge/share")
 async def share_knowledge(request: Request, background_tasks: BackgroundTasks):
     data, author_row = await verify_action(request, "author", background_tasks)
     topic = data.get("topic")
@@ -752,6 +754,7 @@ async def share_knowledge(request: Request, background_tasks: BackgroundTasks):
     return {"knowledge_id": kid, "author": author_row["name"], "topic": topic, "content": content}
 
 @app.get("/knowledge/graph/query")
+@app.get("/v1/knowledge/graph/query")
 async def query_knowledge_graph(subject: str = None, predicate: str = None, object: str = None):
     conn = db()
     query = """
@@ -867,6 +870,7 @@ async def get_knowledge(knowledge_id: str):
 
 
 @app.post("/agent/vouch")
+@app.post("/v1/agent/vouch")
 async def vouch_agent(request: Request, background_tasks: BackgroundTasks):
     data, voucher_row = await verify_action(request, "voucher", background_tasks)
     voucher = data["voucher"]
@@ -1153,6 +1157,7 @@ async def peer_attestation_sync(request: Request, background_tasks: BackgroundTa
     return {"status": "attested_synced", "claim_status": resolved or claim["status"]}
 
 @app.post("/payment/invoice")
+@app.post("/v1/payment/invoice")
 async def create_invoice(request: Request):
     try:
         payload = await request.json()
@@ -1210,6 +1215,7 @@ async def create_invoice(request: Request):
     }
 
 @app.post("/payment/pay")
+@app.post("/v1/payment/pay")
 async def pay_invoice(request: Request, background_tasks: BackgroundTasks):
     data, sender_row = await verify_action(request, "sender_id", background_tasks)
     sender_id = data["sender_id"]
@@ -1354,6 +1360,7 @@ async def pay_invoice(request: Request, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/payment/status/{invoice_id}")
+@app.get("/v1/payment/status/{invoice_id}")
 async def get_payment_status(invoice_id: str):
     conn = db()
     invoice = conn.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,)).fetchone()
@@ -1388,6 +1395,8 @@ async def get_payment_status(invoice_id: str):
 
 
 @app.get("/payment/invoice/{invoice_id}")
+@app.get("/v1/payment/invoice/{invoice_id}")
+@app.get("/v1/payment/{invoice_id}")
 async def get_invoice(invoice_id: str):
     conn = db()
     row = conn.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,)).fetchone()
