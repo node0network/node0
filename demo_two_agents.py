@@ -86,24 +86,18 @@ def run_demo():
             assert resp_k.status_code == 200, f"Could not fetch knowledge payload: HTTP {resp_k.status_code}"
             k_data = resp_k.json()
             
-            # Reconstruct the exact JSON payload dictionary in order
-            signed_data = {
-                "author": k_data["author"],
-                "topic": k_data["topic"],
-                "content": k_data["content"],
-                "timestamp": k_data["timestamp"],
-                "nonce": k_data["nonce"]
-            }
-            raw_bytes = json.dumps(signed_data).encode("utf-8")
+            # Retrieve the exact raw payload bytes signed by Agent A
+            raw_payload_str = k_data["raw_payload"]
+            raw_bytes = raw_payload_str.encode("utf-8")
             
             # Extract signing key from the author ID and verify signature locally
             pubkey_hex_signer = k_data["author"].split("@")[0]
             pubkey_signer = Ed25519PublicKey.from_public_bytes(bytes.fromhex(pubkey_hex_signer))
             signature_bytes = base64.b64decode(k_data["signature"])
             
-            # ASSERTION 4: Cryptographic verify (Zero Trust local signature verification)
+            # ASSERTION 4: Cryptographic verify (Zero Trust local signature verification on raw payload)
             pubkey_signer.verify(signature_bytes, raw_bytes)
-            print("  [Assertion Passed] Locally verified Agent A's cryptographic signature on the claim (No server trust needed!).")
+            print("  [Assertion Passed] Locally verified Agent A's cryptographic signature on raw_payload (No server trust needed!).")
         else:
             print(f"[Agent B] Failed to query graph: HTTP {resp.status_code}")
     except Exception as e:

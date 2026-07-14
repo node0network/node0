@@ -201,6 +201,36 @@ def init_db():
     except sqlite3.OperationalError:
         conn.execute("ALTER TABLE peers ADD COLUMN reputation REAL DEFAULT 1.0")
 
+    # Migration: add preimage column to invoices table if it doesn't exist
+    try:
+        conn.execute("SELECT preimage FROM invoices LIMIT 1")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE invoices ADD COLUMN preimage TEXT")
+
+    # Migration: add signature to knowledge table if it doesn't exist
+    try:
+        conn.execute("SELECT signature FROM knowledge LIMIT 1")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE knowledge ADD COLUMN signature TEXT")
+
+    # Migration: add timestamp to knowledge table if it doesn't exist
+    try:
+        conn.execute("SELECT timestamp FROM knowledge LIMIT 1")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE knowledge ADD COLUMN timestamp REAL")
+
+    # Migration: add nonce to knowledge table if it doesn't exist
+    try:
+        conn.execute("SELECT nonce FROM knowledge LIMIT 1")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE knowledge ADD COLUMN nonce TEXT")
+
+    # Migration: add raw_payload to knowledge table if it doesn't exist
+    try:
+        conn.execute("SELECT raw_payload FROM knowledge LIMIT 1")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE knowledge ADD COLUMN raw_payload TEXT")
+
     # Auto-create admin@node0.network agent and wallet
     conn.execute("INSERT OR IGNORE INTO agents (id, name, public_key, capabilities, reputation, reliability, registered_at) VALUES ('admin@node0.network', 'admin-node0', 'admin-pubkey', '[\"admin\"]', 1.0, 1.0, ?)", (time.time(),))
     conn.execute("INSERT OR IGNORE INTO wallets (agent_id, balance_sats, daily_limit_sats, spent_today_sats, last_reset_at) VALUES ('admin@node0.network', 0, 9999999, 0, ?)", (time.time(),))
@@ -522,7 +552,7 @@ async def register_agent(request: Request):
     except HTTPException:
         conn.close()
         raise
-    agent_id = f"{uuid.uuid4()}@{MY_DOMAIN}"
+    agent_id = f"{public_key_hex}@{MY_DOMAIN}"
     name = generate_agent_name(public_key_hex, capabilities)
     
     # Abwärtskompatibilität: bekannte Test-Agenten starten mit 1.0 Reputation, neue KIs mit 0.0 (Web of Trust)
@@ -732,12 +762,17 @@ async def share_knowledge(request: Request, background_tasks: BackgroundTasks):
     if is_frozen(conn):
         conn.close()
         raise HTTPException(status_code=503, detail="System frozen by Administrator")
-    kid = str(uuid.uuid4())
+    kid = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    raw_bytes = await request.body()
+    raw_payload = raw_bytes.decode("utf-8")
+    sig_b64 = request.headers.get("X-Signature")
+    ts = data.get("timestamp")
+    nonce = data.get("nonce")
     now = time.time()
     try:
         conn.execute("BEGIN IMMEDIATE")
-        conn.execute("INSERT INTO knowledge (id, author, topic, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (kid, author, topic, content, now, now))
+        conn.execute("INSERT INTO knowledge (id, author, topic, content, created_at, updated_at, signature, timestamp, nonce, raw_payload) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (kid, author, topic, content, now, now, sig_b64, ts, nonce, raw_payload))
         
         # Extract and save triples
         triples = extract_triples_from_jsonld(kid, author, content)
@@ -857,6 +892,7 @@ async def vote_knowledge(request: Request, background_tasks: BackgroundTasks):
     return {"status": "voted", "vote": vote, "knowledge_id": knowledge_id}
 
 @app.get("/knowledge/{knowledge_id}")
+@app.get("/v1/knowledge/{knowledge_id}")
 async def get_knowledge(knowledge_id: str):
     conn = db()
     k = conn.execute("SELECT * FROM knowledge WHERE id = ?", (knowledge_id,)).fetchone()
@@ -865,8 +901,18 @@ async def get_knowledge(knowledge_id: str):
         raise HTTPException(status_code=404, detail="Knowledge not found")
     votes = conn.execute("SELECT voter, vote, timestamp FROM knowledge_votes WHERE knowledge_id = ?", (knowledge_id,)).fetchall()
     trust = get_topic_reputation(conn, k["author"], k["topic"])
+    res = dict(k)
+    if not res.get("raw_payload"):
+        fallback_data = {
+            "author": res["author"],
+            "topic": res["topic"],
+            "content": res["content"],
+            "timestamp": res.get("timestamp"),
+            "nonce": res.get("nonce")
+        }
+        res["raw_payload"] = json.dumps(fallback_data)
     conn.close()
-    return {**dict(k), "trust_weight": round(trust, 3), "votes": [dict(vv) for vv in votes]}
+    return {**res, "trust_weight": round(trust, 3), "votes": [dict(vv) for vv in votes]}
 
 
 @app.post("/agent/vouch")
@@ -1199,11 +1245,15 @@ async def create_invoice(request: Request):
             conn.close()
             raise HTTPException(status_code=502, detail=f"Failed to generate Lightning invoice: {str(e)}")
     else:
-        payment_hash = invoice_id
-        bolt11 = f"lnbc{amount_sats}n1{uuid.uuid4().hex[:16]}"
+        import secrets, random
+        preimage = secrets.token_hex(32)
+        payment_hash = hashlib.sha256(bytes.fromhex(preimage)).hexdigest()
+        bech32_chars = "qpzry9x8gf2tvdw0s3jn54khce6mua7t"
+        data_part = "".join(random.choice(bech32_chars) for _ in range(50))
+        bolt11 = f"lnbc{amount_sats}n1{data_part}"
         
-    conn.execute("INSERT INTO invoices (id, receiver_id, amount_sats, memo, bolt11, created_at, status) VALUES (?, ?, ?, ?, ?, ?, 'unpaid')",
-        (payment_hash, receiver_id, amount_sats, memo, bolt11, time.time()))
+    conn.execute("INSERT INTO invoices (id, receiver_id, amount_sats, memo, bolt11, created_at, status, preimage) VALUES (?, ?, ?, ?, ?, ?, 'unpaid', ?)",
+        (payment_hash, receiver_id, amount_sats, memo, bolt11, time.time(), preimage if LN_BACKEND != "lnbits" else None))
     conn.commit()
     conn.close()
     return {
@@ -1279,7 +1329,7 @@ async def pay_invoice(request: Request, background_tasks: BackgroundTasks):
                 conn.execute("UPDATE wallets SET balance_sats = balance_sats + ? WHERE agent_id = 'admin@node0.network'",
                     (fee,))
                 
-            preimage = uuid.uuid4().hex
+            preimage = invoice["preimage"] or hashlib.sha256(invoice["id"].encode()).hexdigest()
             conn.execute("UPDATE invoices SET status = 'paid', sender_id = ?, paid_at = ? WHERE id = ?",
                 (sender_id, time.time(), invoice["id"]))
             conn.commit()
