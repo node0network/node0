@@ -1504,4 +1504,28 @@ async def get_logo_banner_jpg():
         return FileResponse(banner_path, media_type="image/png")
     raise HTTPException(status_code=404, detail="Banner not found")
 
+@app.get("/llms.txt", response_class=PlainTextResponse)
+async def get_llms_txt():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "llms.txt")
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+    raise HTTPException(status_code=404, detail="llms.txt not found")
+
+@app.get("/llms-full.txt", response_class=PlainTextResponse)
+async def get_llms_full_txt():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "llms-full.txt")
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+    raise HTTPException(status_code=404, detail="llms-full.txt not found")
+
+@app.get("/.well-known/node0.json")
+async def get_well_known_node0():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".well-known", "node0.json")
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return JSONResponse(content=json.load(f))
+    raise HTTPException(status_code=404, detail="node0.json not found")
+
 app.include_router(dashboard_router)

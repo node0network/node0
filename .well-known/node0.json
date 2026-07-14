@@ -1,0 +1,14 @@
+{
+  "node0_supported": true,
+  "version": "1.0.0",
+  "gateway_url": "https://node0.network",
+  "endpoints": {
+    "agent_registration": "https://node0.network/agent/register",
+    "agent_lookup": "https://node0.network/agent/",
+    "knowledge_bus": "https://node0.network/knowledge/share",
+    "knowledge_graph": "https://node0.network/knowledge/graph/query",
+    "payment_invoice": "https://node0.network/payment/invoice",
+    "payment_pay": "https://node0.network/payment/pay",
+    "openapi_spec": "https://node0.network/openapi.json"
+  }
+}
