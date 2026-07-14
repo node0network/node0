@@ -30,6 +30,7 @@ ENV/
 
 # State retention files
 alert_state.json
+node0_keys.json
 *.json.tmp
 
 # Backups and temporary files
