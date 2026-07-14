@@ -1,6 +1,7 @@
 import time
 import json
 import requests
+import hashlib
 from node0_sdk import Node0SDK
 
 def run_demo():
@@ -14,16 +15,26 @@ def run_demo():
     # 1. Initialize SDK for Agent A (Service Provider)
     print("\n--- STEP 1: Bootstrapping Agent A (Translator) ---")
     agent_a = Node0SDK(node_url=NODE_URL)
-    # Register Agent A with scrypt PoW
     agent_a_id = agent_a.register(capabilities=["translation"])
     print(f"[Agent A] Registered sovereign identity: {agent_a_id}")
+    
+    # ASSERTION 1: Agent ID must follow format public_key_hex@host
+    pubkey_hex_a, host_a = agent_a_id.split("@")
+    assert len(pubkey_hex_a) == 64, "Agent ID human part must be a 64-char public key hex"
+    assert pubkey_hex_a == agent_a.public_key_hex, "Agent ID public key hex must match local key"
+    print("  [Assertion Passed] Agent A ID format verified (sovereign identity checks out).")
 
     # 2. Initialize SDK for Agent B (Consumer / Client)
     print("\n--- STEP 2: Bootstrapping Agent B (Client) ---")
     agent_b = Node0SDK(node_url=NODE_URL)
-    # Register Agent B with scrypt PoW
     agent_b_id = agent_b.register(capabilities=["reasoning"])
     print(f"[Agent B] Registered sovereign identity: {agent_b_id}")
+    
+    # ASSERTION 2: Agent ID must follow format public_key_hex@host
+    pubkey_hex_b, host_b = agent_b_id.split("@")
+    assert len(pubkey_hex_b) == 64, "Agent ID human part must be a 64-char public key hex"
+    assert pubkey_hex_b == agent_b.public_key_hex, "Agent ID public key hex must match local key"
+    print("  [Assertion Passed] Agent B ID format verified.")
 
     # 3. Agent A shares an API capability offer to the Knowledge Graph
     print("\n--- STEP 3: Agent A Publishes Service Offer to AKB ---")
@@ -41,13 +52,17 @@ def run_demo():
         }
     }
     claim_str = json.dumps(claim)
-    # Share signed knowledge graph claim
     share_res = agent_a.share_knowledge(topic=topic, content=claim_str)
-    print(f"[Agent A] Offer published successfully! Knowledge ID: {share_res.get('knowledge_id')}")
+    kid = share_res.get("knowledge_id")
+    print(f"[Agent A] Offer published successfully! Knowledge ID: {kid}")
+    
+    # ASSERTION 3: Knowledge ID must be the SHA-256 content hash of the claim
+    expected_kid = hashlib.sha256(claim_str.encode("utf-8")).hexdigest()
+    assert kid == expected_kid, f"Knowledge ID must be content hash. Expected: {expected_kid}, got: {kid}"
+    print("  [Assertion Passed] Knowledge ID matches the SHA-256 content hash (data integrity verified).")
 
     # 4. Agent B queries the Gateway's Semantic Graph to find translators
     print("\n--- STEP 4: Agent B Queries Semantic Graph for Translators ---")
-    # Query all triples matching topic
     graph_url = f"{NODE_URL}/v1/knowledge/graph/query"
     try:
         resp = requests.get(graph_url, timeout=5.0)
@@ -79,6 +94,13 @@ def run_demo():
             print(f"[Agent B] Received BOLT11 Invoice request from Agent A:")
             print(f"  Invoice ID: {invoice_id}")
             print(f"  BOLT11 Payload: {bolt11[:40]}...")
+            
+            # ASSERTION 4: BOLT11 HRP and Bech32 character exclusions (no 1, b, i, o in data part)
+            assert bolt11.startswith("lnbc"), "BOLT11 HRP prefix must be lnbc for bitcoin mainnet"
+            hrp, data_part = bolt11.rsplit("1", 1)
+            for c in ["1", "b", "i", "o"]:
+                assert c not in data_part, f"BOLT11 data part must not contain invalid bech32 character: '{c}'"
+            print("  [Assertion Passed] BOLT11 invoice complies with bech32 character exclusions.")
         else:
             print(f"[Agent B] Failed to get invoice: {resp.text}")
             return
@@ -91,15 +113,21 @@ def run_demo():
     try:
         print(f"[Agent B] Paying invoice via Lightning wallet allocation...")
         pay_res = agent_b.pay_invoice(bolt11=bolt11)
-        # Note: pay_invoice returns the preimage proof of payment
+        preimage = pay_res["preimage"]
         print(f"[Agent B] Payment successful!")
-        print(f"  Cryptographic Proof Preimage: {pay_res}")
+        print(f"  Cryptographic Proof Preimage: {preimage}")
+        
+        # ASSERTION 5: Preimage must be 32 bytes (64 hex characters) and its SHA-256 must match the invoice_id (payment_hash)
+        assert len(preimage) == 64, f"Preimage must be 64 characters (32 bytes), got length {len(preimage)}"
+        computed_hash = hashlib.sha256(bytes.fromhex(preimage)).hexdigest()
+        assert computed_hash == invoice_id, f"SHA-256 of preimage ({computed_hash}) must match payment hash ({invoice_id})"
+        print("  [Assertion Passed] Cryptographic payment proof verified (SHA256(preimage) == invoice_id).")
     except Exception as e:
-        # In a sandbox test/dry run without actual Lightning balances, this might raise budget/route errors
-        print(f"[Agent B] Payment execution halted: {e}")
-        print("  (Note: Real Lightning settlement requires valid wallet funding/balances on node0).")
+        print(f"[Agent B] Payment execution failed: {e}")
+        raise e
 
     print("\n=============================================================")
+    print("           ALL CRYPTOGRAPHIC ASSERTIONS PASSED!              ")
     print("                 DEMO COMPLETED SUCCESSFULLY!                ")
     print("=============================================================")
 
