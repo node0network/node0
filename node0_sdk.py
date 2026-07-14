@@ -37,7 +37,7 @@ class Node0SDK:
         if capabilities is None:
             capabilities = ["general"]
         import hashlib
-        print(f"Berechne Proof of Work (scrypt, Schwierigkeit {difficulty})...")
+        print(f"Calculating Proof of Work (scrypt, difficulty {difficulty})...")
         salt = b"node0-sybil-proof-salt"
         prefix = "0" * difficulty
         

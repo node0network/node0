@@ -2,6 +2,8 @@ import time
 import json
 import requests
 import hashlib
+import base64
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from node0_sdk import Node0SDK
 
 def run_demo():
@@ -61,21 +63,52 @@ def run_demo():
     assert kid == expected_kid, f"Knowledge ID must be content hash. Expected: {expected_kid}, got: {kid}"
     print("  [Assertion Passed] Knowledge ID matches the SHA-256 content hash (data integrity verified).")
 
-    # 4. Agent B queries the Gateway's Semantic Graph to find translators
-    print("\n--- STEP 4: Agent B Queries Semantic Graph for Translators ---")
+    # 4. Agent B queries the Gateway's Semantic Graph and verifies Agent A's signature locally
+    print("\n--- STEP 4: Agent B Queries Graph and Verifies Agent A's Signature Locally ---")
     graph_url = f"{NODE_URL}/v1/knowledge/graph/query"
     try:
         resp = requests.get(graph_url, timeout=5.0)
         if resp.status_code == 200:
             res_data = resp.json()
             triples = res_data if isinstance(res_data, list) else res_data.get("triples", [])
-            print(f"[Agent B] Found {len(triples)} offers in the graph:")
-            for idx, triple in enumerate(triples[:3]):
-                print(f"  [{idx+1}] {triple['subject']} -> {triple['predicate']} -> {triple['object'][:60]}...")
+            print(f"[Agent B] Found {len(triples)} offers in the graph. Locating our claim ID...")
+            
+            # Find the triple matching our knowledge ID
+            our_triples = [t for t in triples if t.get("knowledge_id") == kid]
+            if not our_triples:
+                print(f"[Agent B] Warning: claim {kid} not indexed in triples yet. Querying claim directly...")
+            else:
+                print(f"[Agent B] Found {len(our_triples)} triples for our claim. Verification starting...")
+                
+            # Fetch the raw knowledge claim envelope directly from the gateway
+            k_url = f"{NODE_URL}/v1/knowledge/{kid}"
+            resp_k = requests.get(k_url, timeout=5.0)
+            assert resp_k.status_code == 200, f"Could not fetch knowledge payload: HTTP {resp_k.status_code}"
+            k_data = resp_k.json()
+            
+            # Reconstruct the exact JSON payload dictionary in order
+            signed_data = {
+                "author": k_data["author"],
+                "topic": k_data["topic"],
+                "content": k_data["content"],
+                "timestamp": k_data["timestamp"],
+                "nonce": k_data["nonce"]
+            }
+            raw_bytes = json.dumps(signed_data).encode("utf-8")
+            
+            # Extract signing key from the author ID and verify signature locally
+            pubkey_hex_signer = k_data["author"].split("@")[0]
+            pubkey_signer = Ed25519PublicKey.from_public_bytes(bytes.fromhex(pubkey_hex_signer))
+            signature_bytes = base64.b64decode(k_data["signature"])
+            
+            # ASSERTION 4: Cryptographic verify (Zero Trust local signature verification)
+            pubkey_signer.verify(signature_bytes, raw_bytes)
+            print("  [Assertion Passed] Locally verified Agent A's cryptographic signature on the claim (No server trust needed!).")
         else:
             print(f"[Agent B] Failed to query graph: HTTP {resp.status_code}")
     except Exception as e:
-        print(f"[Agent B] Connection error querying graph: {e}")
+        print(f"[Agent B] Connection error or verification failure: {e}")
+        raise e
 
     # 5. Agent B initiates contract by requesting a Lightning Invoice from Agent A
     print("\n--- STEP 5: Agent B Requests Payment Invoice from Agent A ---")
@@ -95,11 +128,11 @@ def run_demo():
             print(f"  Invoice ID: {invoice_id}")
             print(f"  BOLT11 Payload: {bolt11[:40]}...")
             
-            # ASSERTION 4: BOLT11 HRP and Bech32 character exclusions (no 1, b, i, o in data part)
+            # ASSERTION 5: BOLT11 HRP and Bech32 character exclusions (no 1, b, i, o in data part)
             assert bolt11.startswith("lnbc"), "BOLT11 HRP prefix must be lnbc for bitcoin mainnet"
             hrp, data_part = bolt11.rsplit("1", 1)
-            for c in ["1", "b", "i", "o"]:
-                assert c not in data_part, f"BOLT11 data part must not contain invalid bech32 character: '{c}'"
+            bech32_chars = "qpzry9x8gf2tvdw0s3jn54khce6mua7t"
+            assert all(c in bech32_chars for c in data_part), "BOLT11 data part must only contain valid bech32 characters"
             print("  [Assertion Passed] BOLT11 invoice complies with bech32 character exclusions.")
         else:
             print(f"[Agent B] Failed to get invoice: {resp.text}")
@@ -117,7 +150,7 @@ def run_demo():
         print(f"[Agent B] Payment successful!")
         print(f"  Cryptographic Proof Preimage: {preimage}")
         
-        # ASSERTION 5: Preimage must be 32 bytes (64 hex characters) and its SHA-256 must match the invoice_id (payment_hash)
+        # ASSERTION 6: Preimage must be 32 bytes (64 hex characters) and its SHA-256 must match the invoice_id (payment_hash)
         assert len(preimage) == 64, f"Preimage must be 64 characters (32 bytes), got length {len(preimage)}"
         computed_hash = hashlib.sha256(bytes.fromhex(preimage)).hexdigest()
         assert computed_hash == invoice_id, f"SHA-256 of preimage ({computed_hash}) must match payment hash ({invoice_id})"
