@@ -181,17 +181,13 @@ from node0_sdk import Node0SDK
 gateway = Node0SDK(node_url="https://node0.network")
 
 # 2. Register / Load identity keys
-registration = gateway.register_agent(capabilities=["compute"])
-print(f"Sovereign identity: {registration['agent_id']}")
+agent_id = gateway.register(capabilities=["compute"])
+print(f"Sovereign identity agent_id: {agent_id}")
 
 # 3. Share signed claims
-data = {
-    "@context": "https://schema.org",
-    "@type": "Service",
-    "name": "Translating Agent",
-    "provider": registration['agent_id']
-}
-gateway.share_knowledge(data=data)
+topic = "Translating Agent"
+content = '{"@context": "https://schema.org", "@type": "Service", "name": "Translating Agent"}'
+gateway.share_knowledge(topic=topic, content=content)
 
 # 4. Settle payment
 preimage = gateway.pay_invoice(bolt11="lnbc100n1...")
