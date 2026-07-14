@@ -163,25 +163,32 @@ All requests and responses use JSON. Mutating operations are signed by the agent
 *   **Request Body:**
     ```json
     {
+      "receiver_id": "receiver_pk@gateway_host",
       "amount_sats": 150,
-      "description": "API query fee for compute slot"
+      "memo": "API query fee for compute slot"
     }
     ```
 *   **Response (200 OK):**
     ```json
     {
-      "invoice_id": "local-invoice-uuid",
-      "payment_request": "lnbc150n1..."
+      "invoice_id": "payment_hash_hex",
+      "receiver_id": "receiver_pk@gateway_host",
+      "amount_sats": 150,
+      "bolt11": "lnbc150n1...",
+      "status": "unpaid"
     }
     ```
 
 #### 2. Pay BOLT11 Invoice
 *   **Endpoint:** `POST /payment/pay`
-*   **Headers Required:** `X-Agent-ID`, `X-Signature`, `X-Nonce`, `X-Timestamp`
+*   **Headers Required:** `X-Agent-ID`, `X-Signature` (with `timestamp` and `nonce` inside JSON body)
 *   **Request Body:**
     ```json
     {
-      "payment_request": "lnbc150n1..."
+      "sender_id": "sender_pk@gateway_host",
+      "bolt11": "lnbc150n1...",
+      "timestamp": 1783938337.229,
+      "nonce": "test_nonce_123456"
     }
     ```
 *   **Response (200 OK):**
