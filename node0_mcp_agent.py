@@ -7,6 +7,7 @@ import uuid
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from cryptography.hazmat.primitives import serialization
 from mcp.server.fastmcp import FastMCP
+import base64
 
 # Initialize FastMCP Server
 mcp = FastMCP("node0-agent")
@@ -47,10 +48,9 @@ def get_or_create_keys():
         
     return priv_bytes, pub_bytes
 
-def sign_payload(private_key_bytes: bytes, payload_str: str) -> str:
+def sign_payload_bytes(private_key_bytes: bytes, data_bytes: bytes) -> bytes:
     private_key = ed25519.Ed25519PrivateKey.from_private_bytes(private_key_bytes)
-    sig = private_key.sign(payload_str.encode("utf-8"))
-    return sig.hex()
+    return private_key.sign(data_bytes)
 
 @mcp.tool()
 def node0_identity(action: str = "show") -> dict:
@@ -87,44 +87,50 @@ def node0_sign(message: str) -> dict:
     :param message: The text content to sign.
     """
     priv_bytes, pub_bytes = get_or_create_keys()
-    sig_hex = sign_payload(priv_bytes, message)
+    sig = sign_payload_bytes(priv_bytes, message.encode("utf-8"))
     agent_id = f"{pub_bytes.hex()}@{GATEWAY_HOST}"
     
     return {
         "agent_id": agent_id,
         "message": message,
-        "signature_hex": sig_hex,
+        "signature_hex": sig.hex(),
+        "signature_b64": base64.b64encode(sig).decode("utf-8"),
         "public_key_hex": pub_bytes.hex()
     }
 
 @mcp.tool()
-def node0_publish(claim: dict) -> dict:
+def node0_publish(topic: str, content: str) -> dict:
     """
     Sign and publish structured JSON-LD knowledge to the node0 gateway.
     
-    :param claim: A valid JSON-LD dictionary mapping schemas (e.g., from Schema.org).
+    :param topic: The topic of the knowledge (e.g. 'claim', 'compute-rate', etc.)
+    :param content: The structured content string (e.g. JSON-LD string representing the claim data).
     """
     try:
         priv_bytes, pub_bytes = get_or_create_keys()
         agent_id = f"{pub_bytes.hex()}@{GATEWAY_HOST}"
         
-        # Prepare signature headers
-        nonce = str(uuid.uuid4())
-        timestamp = str(time.time())
-        payload_str = f"{nonce}{timestamp}{json.dumps(claim)}"
-        sig_hex = sign_payload(priv_bytes, payload_str)
+        payload = {
+            "author": agent_id,
+            "topic": topic,
+            "content": content,
+            "timestamp": time.time(),
+            "nonce": str(uuid.uuid4())
+        }
+        
+        body_bytes = json.dumps(payload).encode("utf-8")
+        sig = sign_payload_bytes(priv_bytes, body_bytes)
+        sig_b64 = base64.b64encode(sig).decode("utf-8")
         
         headers = {
             "X-Agent-ID": agent_id,
-            "X-Signature": sig_hex,
-            "X-Nonce": nonce,
-            "X-Timestamp": timestamp,
+            "X-Signature": sig_b64,
             "Content-Type": "application/json"
         }
         
         url = f"{GATEWAY_URL}/knowledge/share"
         print(f"Publishing claim to: {url}", file=sys.stderr)
-        response = httpx.post(url, json=claim, headers=headers, timeout=15.0)
+        response = httpx.post(url, data=body_bytes, headers=headers, timeout=15.0)
         
         if response.status_code == 200:
             return response.json()
@@ -134,37 +140,36 @@ def node0_publish(claim: dict) -> dict:
         return {"error": f"Connection error: {str(e)}"}
 
 @mcp.tool()
-def node0_vouch(target_agent_id: str) -> dict:
+def node0_vouch(vouchee: str) -> dict:
     """
     Submit a signed vouch attestation for another agent.
     
-    :param target_agent_id: The global agent ID of the agent to vouch for.
+    :param vouchee: The global agent ID of the agent to vouch for.
     """
     try:
         priv_bytes, pub_bytes = get_or_create_keys()
         agent_id = f"{pub_bytes.hex()}@{GATEWAY_HOST}"
         
-        body = {
-            "target_agent_id": target_agent_id,
-            "weight": 1.0
+        payload = {
+            "voucher": agent_id,
+            "vouchee": vouchee,
+            "timestamp": time.time(),
+            "nonce": str(uuid.uuid4())
         }
         
-        nonce = str(uuid.uuid4())
-        timestamp = str(time.time())
-        payload_str = f"{nonce}{timestamp}{json.dumps(body)}"
-        sig_hex = sign_payload(priv_bytes, payload_str)
+        body_bytes = json.dumps(payload).encode("utf-8")
+        sig = sign_payload_bytes(priv_bytes, body_bytes)
+        sig_b64 = base64.b64encode(sig).decode("utf-8")
         
         headers = {
             "X-Agent-ID": agent_id,
-            "X-Signature": sig_hex,
-            "X-Nonce": nonce,
-            "X-Timestamp": timestamp,
+            "X-Signature": sig_b64,
             "Content-Type": "application/json"
         }
         
         url = f"{GATEWAY_URL}/agent/vouch"
         print(f"Submitting vouch to: {url}", file=sys.stderr)
-        response = httpx.post(url, json=body, headers=headers, timeout=15.0)
+        response = httpx.post(url, data=body_bytes, headers=headers, timeout=15.0)
         
         if response.status_code == 200:
             return response.json()
