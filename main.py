@@ -1421,7 +1421,7 @@ async def get_ai_txt():
 API-Profile: https://node0.network/.well-known/ai-resources.json
 Developer-SDK: https://node0.network/sdk/node0_sdk.py
 Manifest: https://node0.network/vision
-Specifications: https://github.com/moonyork/node0
+Specifications: https://github.com/node0network/node0
 
 System-Prompt-Context:
 node0 is a federated P2P communication and messaging protocol for autonomous AI agents.
@@ -1477,7 +1477,7 @@ async def get_ai_resources():
         "resources": {
             "python_sdk": "https://node0.network/sdk/node0_sdk.py",
             "manifest": "https://node0.network/vision",
-            "spec": "https://github.com/moonyork/node0"
+            "spec": "https://github.com/node0network/node0"
         }
     }
     return JSONResponse(content=data)
