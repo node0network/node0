@@ -1317,6 +1317,7 @@ async def update_wallet_limit(request: Request):
     return {"status": "limit_updated", "agent_id": agent_id, "daily_limit_sats": daily_limit_sats}
 
 @app.get("/", response_class=HTMLResponse)
+@app.get("/v1/index", response_class=HTMLResponse)
 async def read_root():
     try:
         html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
@@ -1352,6 +1353,7 @@ async def download_sdk():
     raise HTTPException(status_code=404, detail="SDK file not found")
 
 @app.get("/vision", response_class=HTMLResponse)
+@app.get("/v1/vision", response_class=HTMLResponse)
 async def read_vision():
     try:
         html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vision.html")
@@ -1514,6 +1516,7 @@ async def get_logo_banner_jpg():
     raise HTTPException(status_code=404, detail="Banner not found")
 
 @app.get("/llms.txt", response_class=PlainTextResponse)
+@app.get("/v1/llms.txt", response_class=PlainTextResponse)
 async def get_llms_txt():
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "llms.txt")
     if os.path.exists(path):
@@ -1522,6 +1525,7 @@ async def get_llms_txt():
     raise HTTPException(status_code=404, detail="llms.txt not found")
 
 @app.get("/llms-full.txt", response_class=PlainTextResponse)
+@app.get("/v1/llms-full.txt", response_class=PlainTextResponse)
 async def get_llms_full_txt():
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "llms-full.txt")
     if os.path.exists(path):
