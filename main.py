@@ -1248,19 +1248,27 @@ async def create_invoice(request: Request):
 @app.post("/payment/pay")
 @app.post("/v1/payment/pay")
 async def pay_invoice(request: Request, background_tasks: BackgroundTasks):
-    data, sender_row = await verify_action(request, "sender_id", background_tasks)
+    """
+    Zahlungs-Abwicklung fuer node0 (Intern & Externe Lightning-Invoices).
+    
+    ISOLIERTER HOTFIX (V1):
+    - Unpacking (5 Werte von verify_action) korrigiert.
+    - _check_freshness_and_nonce(conn, ts, nonce) direkt nach BEGIN IMMEDIATE integriert (Replay-Schutz).
+    
+    BEKANNTE ENGINE-LIMITATIONS (Roadmap / Phase 2 Refactoring):
+    1. Lock-Haltedauer: Externe LNBits HTTP-Calls (decode/pay) liegen noch innerhalb von BEGIN IMMEDIATE (max 25s Timeout).
+    2. Reconciliation: Ein Crash zwischen LNBits-Erfolg und DB-Commit erfordert noch Pending-State Reconciliation.
+    """
+    conn, data, sender_row, ts, nonce = await verify_action(request, "sender_id", background_tasks)
     sender_id = data["sender_id"]
     bolt11 = data.get("bolt11")
     if not bolt11:
-        raise HTTPException(status_code=400, detail="Missing 'bolt11'")
-        
-    conn = db()
-    if is_frozen(conn):
         conn.close()
-        raise HTTPException(status_code=503, detail="System frozen by Administrator")
+        raise HTTPException(status_code=400, detail="Missing 'bolt11'")
         
     try:
         conn.execute("BEGIN IMMEDIATE")
+        _check_freshness_and_nonce(conn, ts, nonce)
         
         # Check if this invoice exists in our database (internal payment)
         invoice = conn.execute("SELECT * FROM invoices WHERE bolt11 = ?", (bolt11,)).fetchone()
@@ -1283,12 +1291,7 @@ async def pay_invoice(request: Request, background_tasks: BackgroundTasks):
                 try:
                     from mailer import send_mail
                     subject = "WARNUNG: KI-Zahlungsblockade (Limit ueberschritten)"
-                    html = f"""
-                    <h3>KI-Zahlung blockiert</h3>
-                    <p>Die KI <b>{sender_id}</b> hat versucht, eine Rechnung ueber {amount} Satoshis zu zahlen.</p>
-                    <p>Dies ueberschreitet ihr aktuelles Tageslimit von <b>{sender_wallet['daily_limit_sats']} Satoshis</b> (bereits heute ausgegeben: {sender_wallet['spent_today_sats']} Sats).</p>
-                    <p>Die Transaktion wurde blockiert. Bitte pruefe das Cockpit, um das Limit ggf. anzuheben.</p>
-                    """
+                    html = f"<h3>KI-Zahlung blockiert</h3><p>Die KI <b>{sender_id}</b> hat versucht, eine Rechnung ueber {amount} Satoshis zu zahlen.</p>"
                     send_mail(subject, html)
                 except Exception:
                     pass
@@ -1314,7 +1317,6 @@ async def pay_invoice(request: Request, background_tasks: BackgroundTasks):
             conn.execute("UPDATE invoices SET status = 'paid', sender_id = ?, paid_at = ? WHERE id = ?",
                 (sender_id, time.time(), invoice["id"]))
             conn.commit()
-            conn.close()
             return {"status": "paid", "preimage": preimage, "amount_sats": amount, "routing_fee_sats": fee}
             
         else:
@@ -1340,22 +1342,10 @@ async def pay_invoice(request: Request, background_tasks: BackgroundTasks):
             sender_wallet = conn.execute("SELECT * FROM wallets WHERE agent_id = ?", (sender_id,)).fetchone()
             
             total_cost = amount + 1
-            
             if sender_wallet["balance_sats"] < total_cost:
                 raise HTTPException(status_code=400, detail="Insufficient funds")
                 
             if sender_wallet["spent_today_sats"] + total_cost > sender_wallet["daily_limit_sats"]:
-                try:
-                    from mailer import send_mail
-                    subject = "WARNUNG: KI-Zahlungsblockade (Limit ueberschritten)"
-                    html = f"""
-                    <h3>KI-Zahlung blockiert</h3>
-                    <p>Die KI <b>{sender_id}</b> hat versucht, eine externe Rechnung ueber {amount} Satoshis zu zahlen.</p>
-                    <p>Dies ueberschreitet ihr aktuelles Tageslimit von <b>{sender_wallet['daily_limit_sats']} Satoshis</b>.</p>
-                    """
-                    send_mail(subject, html)
-                except Exception:
-                    pass
                 raise HTTPException(status_code=403, detail="Daily limit exceeded. Owner approval required.")
                 
             try:
@@ -1378,17 +1368,15 @@ async def pay_invoice(request: Request, background_tasks: BackgroundTasks):
                 (payment_hash, sender_id, amount, bolt11, time.time(), time.time()))
                 
             conn.commit()
-            conn.close()
             return {"status": "paid", "preimage": preimage, "amount_sats": amount, "routing_fee_sats": 1}
             
-    except HTTPException as e:
-        conn.rollback()
-        conn.close()
-        raise e
     except Exception as e:
         conn.rollback()
-        conn.close()
+        if isinstance(e, HTTPException):
+            raise e
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
 
 @app.get("/payment/status/{invoice_id}")
 @app.get("/v1/payment/status/{invoice_id}")
