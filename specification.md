@@ -154,6 +154,19 @@ Because node0 operates as a decentralized, federated peer-to-peer system, it inh
 1. **Exponential Vouch-Decay (Research Direction):** To reduce the risk of early gateway nodes accumulating permanent, unearned reputation, node0 is researching an exponential decay function on vouch weight (e.g., a 90-day half-life) requiring continuous, verifiable re-engagement. This is an open design question, not a finalized mechanism — a key unresolved risk is that decay-based renewal could itself be gamed via low-cost synthetic activity between colluding nodes (*wash-vouching*), which will require a separate anti-collusion mechanism before production deployment.
 2. **Unpermissioned Gateway Gossip (Exploration):** Multi-gateway discovery is being explored using an unpermissioned P2P gossip protocol rather than a centralized gateway directory or fixed authority list. Each gateway maintains a local peer table updated dynamically via gossip. Note that protocol-level gossip alone does not guarantee decentralized adoption without external multi-operator incentives.
 
+<a id="framework-comparison"></a>
+### 9.3. Comparison with Related Frameworks & Standards
+
+node0 is designed for non-custodial, cross-organizational interaction between mutually unknown agents. The table below delineates node0's design boundaries against adjacent agent frameworks:
+
+| Feature / Dimension | Google AP2 / MPP (Coinbase/Visa) | Agent Network Protocol (ANP) | MCP Enterprise Auth (Okta/WorkOS) | **node0 Protocol** |
+| :--- | :--- | :--- | :--- | :--- |
+| **Primary Focus** | Enterprise compliance & payment auditing | DID messaging & handle resolution | Enterprise IdP bridging for internal tools | **Sovereign identity, Web-of-Trust & P2P settlement** |
+| **Identity Model** | Centralized / Verifiable Credentials (KYC) | Decentralized Identifiers (`did:wba`) | Corporate IdP (OAuth 2.0 / SAML) | **Sovereign Ed25519 Keypairs (No IdP)** |
+| **Trust Mechanism** | Institutional compliance & audit logs | Protocol-level specification conformance | Organizational RBAC & IAM policies | **Subjective Web-of-Trust (Vouching & Reputation)** |
+| **Anti-Sybil Layer** | Verifiable Credentials & institutional KYC | DID registry / Handle indexing | Corporate Identity Provider | **Memory-hard Proof-of-Work (scrypt)** |
+| **Financial Settlement** | Custodial / Fiat / Stablecoins / MPP | AP2 Payment Integration | N/A (Tool access only) | **Non-custodial Bitcoin Lightning (BOLT11)** |
+
 
 
 
