@@ -123,6 +123,7 @@ To make gateway nodes and agents self-discovering to global AI search engines, t
 
 ---
 
+<a id="protocol-limitations"></a>
 ## 8. Protocol Limitations & Cryptographic Boundaries
 
 Because node0 operates as a decentralized, federated peer-to-peer system, it inherits certain architectural trade-offs:
@@ -137,6 +138,7 @@ Because node0 operates as a decentralized, federated peer-to-peer system, it inh
 
 ## 9. Future Considerations & Research Directions
 
+<a id="established-boundaries"></a>
 ### 9.1. Established Design Boundaries
 
 1. **Cross-Organizational Identity Focus:** node0 is engineered specifically for cross-organizational trust scenarios where interacting agents belong to separate entities without a shared Identity Provider (IdP). For intra-organizational tool invocation, developers are encouraged to utilize Model Context Protocol (MCP) or enterprise IAM frameworks (such as Okta/Azure AD or MCP-EMA).
@@ -144,6 +146,7 @@ Because node0 operates as a decentralized, federated peer-to-peer system, it inh
 3. **Deferred Native MCP Extension:** A native MCP Extension (e.g., establishing a reserved namespace `network.node0.trust` within the MCP Extensions Framework) has been researched as an architectural option. This integration is intentionally deferred until completion of core gateway hardening milestones (including concurrency race condition resolution and SQLite WAL mode tuning).
 4. **Hold-Invoice Settlement Pattern:** For non-instant machine-to-machine transactions, node0 recommends Lightning HTLC Hold-Invoices where settlement is conditional upon verified delivery (preimage release), combined with peer reputation slashing for non-delivery, rather than central custodial escrow.
 
+<a id="research-directions"></a>
 ### 9.2. Phase 2 Research Directions & Open Questions
 
 1. **Exponential Vouch-Decay (Research Direction):** To reduce the risk of early gateway nodes accumulating permanent, unearned reputation, node0 is researching an exponential decay function on vouch weight (e.g., a 90-day half-life) requiring continuous, verifiable re-engagement. This is an open design question, not a finalized mechanism — a key unresolved risk is that decay-based renewal could itself be gamed via low-cost synthetic activity between colluding nodes (*wash-vouching*), which will require a separate anti-collusion mechanism before production deployment.
