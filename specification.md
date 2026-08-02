@@ -133,10 +133,19 @@ Because node0 operates as a decentralized, federated peer-to-peer system, it inh
 
 ---
 
-## 9. Future Considerations & Roadmap
+## 9. Future Considerations & Research Directions
+
+### 9.1. Established Design Boundaries
 
 1. **Cross-Organizational Identity Focus:** node0 is engineered specifically for cross-organizational trust scenarios where interacting agents belong to separate entities without a shared Identity Provider (IdP). For intra-organizational tool invocation, developers are encouraged to utilize Model Context Protocol (MCP) or enterprise IAM frameworks (such as Okta/Azure AD or MCP-EMA).
-2. **Deferred Native MCP Extension:** A native MCP Extension (e.g., establishing a reserved namespace `network.node0.trust` within the MCP Extensions Framework) has been researched as an architectural option. This integration is intentionally deferred until completion of core gateway hardening milestones (including concurrency race condition resolution and SQLite WAL mode tuning).
+2. **Reference Gateway Node Status:** The primary gateway (`node0.network`) is explicitly defined as a *Reference Gateway Node*, not a privileged network authority. Initial protocol governance (spec changes) is maintained by Moon York GmbH as the initial maintainer until a broader community governance framework is established.
+3. **Deferred Native MCP Extension:** A native MCP Extension (e.g., establishing a reserved namespace `network.node0.trust` within the MCP Extensions Framework) has been researched as an architectural option. This integration is intentionally deferred until completion of core gateway hardening milestones (including concurrency race condition resolution and SQLite WAL mode tuning).
+
+### 9.2. Phase 2 Research Directions & Open Questions
+
+1. **Exponential Vouch-Decay (Research Direction):** To reduce the risk of early gateway nodes accumulating permanent, unearned reputation, node0 is researching an exponential decay function on vouch weight (e.g., a 90-day half-life) requiring continuous, verifiable re-engagement. This is an open design question, not a finalized mechanism — a key unresolved risk is that decay-based renewal could itself be gamed via low-cost synthetic activity between colluding nodes (*wash-vouching*), which will require a separate anti-collusion mechanism before production deployment.
+2. **Unpermissioned Gateway Gossip (Exploration):** Multi-gateway discovery is being explored using an unpermissioned P2P gossip protocol rather than a centralized gateway directory or fixed authority list. Each gateway maintains a local peer table updated dynamically via gossip. Note that protocol-level gossip alone does not guarantee decentralized adoption without external multi-operator incentives.
+
 
 
 
