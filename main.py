@@ -584,38 +584,61 @@ async def list_agents():
 
 @app.post("/agent/handshake")
 async def handshake(request: Request, background_tasks: BackgroundTasks):
-    data, a_row = await verify_action(request, "agent_a", background_tasks)
+    conn, data, a_row, ts, nonce = await verify_action(request, "agent_a", background_tasks)
     agent_a = data["agent_a"]
     agent_b = data.get("agent_b")
     if not agent_b:
-        raise HTTPException(status_code=400, detail="Missing 'agent_b'")
-    conn = db()
-    b = conn.execute("SELECT name FROM agents WHERE id = ?", (agent_b,)).fetchone()
-    if not b:
         conn.close()
-        raise HTTPException(status_code=404, detail="agent_b not found")
-    conn.execute("UPDATE agents SET interactions = interactions + 1 WHERE id IN (?, ?)", (agent_a, agent_b))
-    conn.execute("INSERT INTO handshakes (id, agent_a, agent_b, timestamp) VALUES (?, ?, ?, ?)",
-        (str(uuid.uuid4()), agent_a, agent_b, time.time()))
-    conn.commit()
-    conn.close()
+        raise HTTPException(status_code=400, detail="Missing 'agent_b'")
+        
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        _check_freshness_and_nonce(conn, ts, nonce)
+        b = conn.execute("SELECT name FROM agents WHERE id = ?", (agent_b,)).fetchone()
+        if not b:
+            raise HTTPException(status_code=404, detail="agent_b not found")
+            
+        conn.execute("UPDATE agents SET interactions = interactions + 1 WHERE id IN (?, ?)", (agent_a, agent_b))
+        conn.execute("INSERT INTO handshakes (id, agent_a, agent_b, timestamp) VALUES (?, ?, ?, ?)",
+            (str(uuid.uuid4()), agent_a, agent_b, time.time()))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+        
     return {"status": "connected", "agent_a": a_row["name"], "agent_b": b["name"], "timestamp": time.time()}
 
 @app.post("/claim/submit")
 async def submit_claim(request: Request, background_tasks: BackgroundTasks):
-    data, author_row = await verify_action(request, "author", background_tasks)
+    conn, data, author_row, ts, nonce = await verify_action(request, "author", background_tasks)
     statement = data.get("statement")
     if not statement or not isinstance(statement, str):
+        conn.close()
         raise HTTPException(status_code=400, detail="Missing 'statement'")
     if len(statement) > 2000:
+        conn.close()
         raise HTTPException(status_code=400, detail="statement too long (max 2000 chars)")
+        
     author = data["author"]
-    conn = db()
     claim_id = str(uuid.uuid4())
-    conn.execute("INSERT INTO claims (id, author, statement, created_at) VALUES (?, ?, ?, ?)",
-        (claim_id, author, statement, time.time()))
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        _check_freshness_and_nonce(conn, ts, nonce)
+        conn.execute("INSERT INTO claims (id, author, statement, created_at) VALUES (?, ?, ?, ?)",
+            (claim_id, author, statement, time.time()))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+        
     try:
         raw_body = await request.body()
         headers_dict = {k.lower(): v for k, v in request.headers.items()}
@@ -626,18 +649,21 @@ async def submit_claim(request: Request, background_tasks: BackgroundTasks):
 
 @app.post("/claim/attest")
 async def attest_claim(request: Request, background_tasks: BackgroundTasks):
-    data, att = await verify_action(request, "attestor", background_tasks)
+    conn, data, att, ts, nonce = await verify_action(request, "attestor", background_tasks)
     claim_id = data.get("claim_id")
     verdict = data.get("verdict")
     if not claim_id:
+        conn.close()
         raise HTTPException(status_code=400, detail="Missing 'claim_id'")
     if verdict not in ("support", "refute"):
+        conn.close()
         raise HTTPException(status_code=400, detail="verdict must be 'support' or 'refute'")
+        
     attestor = data["attestor"]
-    conn = db()
     claim_author = None
     try:
         conn.execute("BEGIN IMMEDIATE")
+        _check_freshness_and_nonce(conn, ts, nonce)
         claim = conn.execute("SELECT * FROM claims WHERE id = ?", (claim_id,)).fetchone()
         if not claim:
             raise HTTPException(status_code=404, detail="Claim not found")
@@ -684,11 +710,10 @@ async def attest_claim(request: Request, background_tasks: BackgroundTasks):
                         domain_part = author.split("@", 1)[1]
                         conn.execute("UPDATE peers SET reputation = MAX(0.1, reputation - 0.2) WHERE name = ?", (domain_part,))
         conn.commit()
-    except HTTPException:
-        conn.rollback()
-        raise
     except Exception as e:
         conn.rollback()
+        if isinstance(e, HTTPException):
+            raise e
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         conn.close()
@@ -840,36 +865,45 @@ async def query_knowledge(topic: str):
 
 @app.post("/knowledge/vote")
 async def vote_knowledge(request: Request, background_tasks: BackgroundTasks):
-    data, v = await verify_action(request, "voter", background_tasks)
+    conn, data, v, ts, nonce = await verify_action(request, "voter", background_tasks)
     knowledge_id = data.get("knowledge_id")
     vote = data.get("vote")
     if not knowledge_id:
+        conn.close()
         raise HTTPException(status_code=400, detail="Missing 'knowledge_id'")
     if vote not in ("confirm", "dispute"):
+        conn.close()
         raise HTTPException(status_code=400, detail="vote must be 'confirm' or 'dispute'")
+        
     voter = data["voter"]
-    conn = db()
-    k = conn.execute("SELECT * FROM knowledge WHERE id = ?", (knowledge_id,)).fetchone()
-    if not k:
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        _check_freshness_and_nonce(conn, ts, nonce)
+        k = conn.execute("SELECT * FROM knowledge WHERE id = ?", (knowledge_id,)).fetchone()
+        if not k:
+            raise HTTPException(status_code=404, detail="Knowledge not found")
+        if k["author"] == voter:
+            raise HTTPException(status_code=403, detail="Author cannot vote own knowledge")
+        existing = conn.execute("SELECT 1 FROM knowledge_votes WHERE knowledge_id=? AND voter=?", (knowledge_id, voter)).fetchone()
+        if existing:
+            raise HTTPException(status_code=409, detail="Already voted")
+        conn.execute("INSERT INTO knowledge_votes (id, knowledge_id, voter, vote, timestamp) VALUES (?, ?, ?, ?, ?)",
+            (str(uuid.uuid4()), knowledge_id, voter, vote, time.time()))
+        if vote == "confirm":
+            conn.execute("UPDATE knowledge SET confirmations = confirmations + 1, updated_at = ? WHERE id = ?", (time.time(), knowledge_id))
+            adjust_topic_reputation(conn, k["author"], k["topic"], 0.2)
+        else:
+            conn.execute("UPDATE knowledge SET disputes = disputes + 1, updated_at = ? WHERE id = ?", (time.time(), knowledge_id))
+            adjust_topic_reputation(conn, k["author"], k["topic"], -0.2)
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
         conn.close()
-        raise HTTPException(status_code=404, detail="Knowledge not found")
-    if k["author"] == voter:
-        conn.close()
-        raise HTTPException(status_code=403, detail="Author cannot vote own knowledge")
-    existing = conn.execute("SELECT 1 FROM knowledge_votes WHERE knowledge_id=? AND voter=?", (knowledge_id, voter)).fetchone()
-    if existing:
-        conn.close()
-        raise HTTPException(status_code=409, detail="Already voted")
-    conn.execute("INSERT INTO knowledge_votes (id, knowledge_id, voter, vote, timestamp) VALUES (?, ?, ?, ?, ?)",
-        (str(uuid.uuid4()), knowledge_id, voter, vote, time.time()))
-    if vote == "confirm":
-        conn.execute("UPDATE knowledge SET confirmations = confirmations + 1, updated_at = ? WHERE id = ?", (time.time(), knowledge_id))
-        adjust_topic_reputation(conn, k["author"], k["topic"], 0.2)
-    else:
-        conn.execute("UPDATE knowledge SET disputes = disputes + 1, updated_at = ? WHERE id = ?", (time.time(), knowledge_id))
-        adjust_topic_reputation(conn, k["author"], k["topic"], -0.2)
-    conn.commit()
-    conn.close()
+        
     return {"status": "voted", "vote": vote, "knowledge_id": knowledge_id}
 
 @app.get("/knowledge/{knowledge_id}")
@@ -899,39 +933,47 @@ async def get_knowledge(knowledge_id: str):
 @app.post("/agent/vouch")
 @app.post("/v1/agent/vouch")
 async def vouch_agent(request: Request, background_tasks: BackgroundTasks):
-    data, voucher_row = await verify_action(request, "voucher", background_tasks)
+    conn, data, voucher_row, ts, nonce = await verify_action(request, "voucher", background_tasks)
     voucher = data["voucher"]
     vouchee = data.get("vouchee")
     if not vouchee:
+        conn.close()
         raise HTTPException(status_code=400, detail="Missing 'vouchee'")
     if voucher == vouchee:
+        conn.close()
         raise HTTPException(status_code=400, detail="Cannot vouch for yourself")
-    if voucher_row["reputation"] < 1.0:
-        raise HTTPException(status_code=403, detail="Voucher reputation must be at least 1.0")
-    conn = db()
+        
     try:
         conn.execute("BEGIN IMMEDIATE")
-        vouchee_row = conn.execute("SELECT * FROM agents WHERE id = ?", (vouchee,)).fetchone()
+        _check_freshness_and_nonce(conn, ts, nonce)
+        
+        current_voucher = conn.execute("SELECT name, reputation FROM agents WHERE id = ?", (voucher,)).fetchone()
+        if not current_voucher or current_voucher["reputation"] < 1.0:
+            raise HTTPException(status_code=403, detail="Voucher reputation must be at least 1.0")
+            
+        vouchee_row = conn.execute("SELECT name, reputation FROM agents WHERE id = ?", (vouchee,)).fetchone()
         if not vouchee_row:
             raise HTTPException(status_code=404, detail="Vouchee not found")
         if vouchee_row["reputation"] >= 1.0:
             raise HTTPException(status_code=409, detail="Vouchee already has reputation >= 1.0")
+            
         existing = conn.execute("SELECT 1 FROM vouches WHERE voucher=? AND vouchee=?", (voucher, vouchee)).fetchone()
         if existing:
             raise HTTPException(status_code=409, detail="Already vouched by this agent")
+            
         conn.execute("INSERT INTO vouches (id, voucher, vouchee, timestamp) VALUES (?, ?, ?, ?)",
             (str(uuid.uuid4()), voucher, vouchee, time.time()))
         conn.execute("UPDATE agents SET reputation = 1.0 WHERE id = ?", (vouchee,))
         conn.commit()
-    except HTTPException:
-        conn.rollback()
-        raise
     except Exception as e:
         conn.rollback()
+        if isinstance(e, HTTPException):
+            raise e
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         conn.close()
-    return {"status": "vouched", "voucher": voucher_row["name"], "vouchee": vouchee_row["name"]}
+        
+    return {"status": "vouched", "voucher": current_voucher["name"], "vouchee": vouchee_row["name"]}
 
 @app.get("/peer/info")
 async def peer_info():
@@ -1076,65 +1118,83 @@ def broadcast_attestation_to_peers(body: bytes, content_type: str, headers_dict:
 
 @app.post("/peer/claim/sync")
 async def peer_claim_sync(request: Request, background_tasks: BackgroundTasks):
-    data, author_row = await verify_action(request, "author", background_tasks)
+    conn, data, author_row, ts, nonce = await verify_action(request, "author", background_tasks)
     claim_id = data.get("claim_id")
     statement = data.get("statement")
     if not claim_id or not statement:
+        conn.close()
         raise HTTPException(status_code=400, detail="Missing 'claim_id' or 'statement'")
         
     author = data["author"]
     if "@" not in author:
+        conn.close()
         raise HTTPException(status_code=400, detail="Author must be a federated agent")
         
     domain_part = author.split("@", 1)[1]
-    conn = db()
-    peer = conn.execute("SELECT 1 FROM peers WHERE name = ? AND status = 'active'", (domain_part,)).fetchone()
-    if not peer:
-        conn.close()
-        raise HTTPException(status_code=403, detail="Author peer node is not active/registered")
+    
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        # 1. Graceful Retry Check: Falls der Claim bereits synchronisiert wurde, sofort "already_exists" zurückgeben
+        existing = conn.execute("SELECT 1 FROM claims WHERE id = ?", (claim_id,)).fetchone()
+        if existing:
+            conn.commit()
+            return {"status": "already_exists", "claim_id": claim_id}
+
+        # 2. Erst bei neuem Claim den Nonce-Replay-Check ausführen
+        _check_freshness_and_nonce(conn, ts, nonce)
         
-    existing = conn.execute("SELECT 1 FROM claims WHERE id = ?", (claim_id,)).fetchone()
-    if existing:
+        peer = conn.execute("SELECT 1 FROM peers WHERE name = ? AND status = 'active'", (domain_part,)).fetchone()
+        if not peer:
+            raise HTTPException(status_code=403, detail="Author peer node is not active/registered")
+            
+        conn.execute("INSERT INTO claims (id, author, statement, created_at) VALUES (?, ?, ?, ?)",
+            (claim_id, author, statement, time.time()))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
         conn.close()
-        return {"status": "already_exists", "claim_id": claim_id}
         
-    conn.execute("INSERT INTO claims (id, author, statement, created_at) VALUES (?, ?, ?, ?)",
-        (claim_id, author, statement, time.time()))
-    conn.commit()
-    conn.close()
     return {"status": "synced", "claim_id": claim_id}
 
 @app.post("/peer/attestation/sync")
 async def peer_attestation_sync(request: Request, background_tasks: BackgroundTasks):
-    data, att_row = await verify_action(request, "attestor", background_tasks)
+    conn, data, att_row, ts, nonce = await verify_action(request, "attestor", background_tasks)
     claim_id = data.get("claim_id")
     verdict = data.get("verdict")
     attestor = data["attestor"]
     
     if not claim_id or verdict not in ("support", "refute"):
+        conn.close()
         raise HTTPException(status_code=400, detail="Invalid sync payload")
         
     if "@" not in attestor:
+        conn.close()
         raise HTTPException(status_code=400, detail="Attestor must be a federated agent")
         
     domain_part = attestor.split("@", 1)[1]
-    conn = db()
-    peer = conn.execute("SELECT 1 FROM peers WHERE name = ? AND status = 'active'", (domain_part,)).fetchone()
-    if not peer:
-        conn.close()
-        raise HTTPException(status_code=403, detail="Attestor peer node is not active/registered")
-        
+    
     try:
         conn.execute("BEGIN IMMEDIATE")
-        claim = conn.execute("SELECT * FROM claims WHERE id = ?", (claim_id,)).fetchone()
-        if not claim:
-            raise HTTPException(status_code=404, detail="Claim not found locally")
-            
+        # 1. Graceful Retry Check: Falls Attestierung bereits synchronisiert wurde, sofort zurückkehren
         existing = conn.execute("SELECT 1 FROM attestations WHERE claim_id=? AND attestor=?", (claim_id, attestor)).fetchone()
         if existing:
             conn.commit()
-            conn.close()
             return {"status": "already_exists"}
+
+        # 2. Nonce-Replay-Check für neue Attestierungen
+        _check_freshness_and_nonce(conn, ts, nonce)
+        
+        peer = conn.execute("SELECT 1 FROM peers WHERE name = ? AND status = 'active'", (domain_part,)).fetchone()
+        if not peer:
+            raise HTTPException(status_code=403, detail="Attestor peer node is not active/registered")
+            
+        claim = conn.execute("SELECT * FROM claims WHERE id = ?", (claim_id,)).fetchone()
+        if not claim:
+            raise HTTPException(status_code=404, detail="Claim not found locally")
             
         weight = att_row["reputation"]
         conn.execute("INSERT INTO attestations (id, claim_id, attestor, verdict, weight, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
@@ -1172,11 +1232,10 @@ async def peer_attestation_sync(request: Request, background_tasks: BackgroundTa
                         auth_domain = author.split("@", 1)[1]
                         conn.execute("UPDATE peers SET reputation = MAX(0.1, reputation - 0.2) WHERE name = ?", (auth_domain,))
         conn.commit()
-    except HTTPException as e:
-        conn.rollback()
-        raise e
     except Exception as e:
         conn.rollback()
+        if isinstance(e, HTTPException):
+            raise e
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         conn.close()
