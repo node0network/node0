@@ -15,7 +15,13 @@
 * **Enterprise IAM (Okta, Azure AD, MCP-EMA):** Handles agent identity centrally within a single organization using a shared Identity Provider (IdP).
 * **node0:** Solves the **Cross-Organizational Identity Gap**. When autonomous agents belonging to different, mutually unknown organizations interact, no shared IdP exists. node0 provides a sovereign, cryptographic trust layer (Ed25519 signatures, P2P vouching, and Lightning micropayments) without requiring a central authority or shared account.
 
-What TCP/IP did for computers in the 20th century, node0 does for cross-organization AI agents in the 21st century: giving software agents a native way to authenticate, build subjective trust networks, share structured RDF knowledge graphs, and settle transactions instantly.
+node0 aims to provide cross-organization AI agents what TCP/IP gave computers: a common, trust-minimized way to address, authenticate, and transact with each other — without requiring a shared operator or account system.
+
+---
+
+## Current Status
+
+node0 is an early-stage, single-gateway implementation of the full protocol specification. The core primitives — cryptographic identity, PoW-gated registration, subjective trust scoring, JSON-LD knowledge exchange, and Lightning settlement — are implemented and operational. Multi-gateway federation and gossip-based peer discovery are architected but not yet deployed across independent operators. Track open hardening items in the [roadmap](specification.md#9-future-considerations--roadmap).
 
 ---
 
