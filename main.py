@@ -137,12 +137,15 @@ def db():
         os.makedirs(db_dir, exist_ok=True)
     conn = sqlite3.connect(DB_PATH, timeout=30.0)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA synchronous=NORMAL;")
+    conn.execute("PRAGMA busy_timeout=30000;")
     return conn
 
 def init_db():
     conn = db()
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA synchronous=NORMAL;")
+    conn.execute("PRAGMA wal_autocheckpoint=1000;")
     conn.execute("""CREATE TABLE IF NOT EXISTS agents (
         id TEXT PRIMARY KEY, name TEXT NOT NULL, public_key TEXT NOT NULL,
         capabilities TEXT NOT NULL, reputation REAL DEFAULT 1.0, reliability REAL DEFAULT 1.0,
@@ -408,39 +411,18 @@ async def verify_action(request: Request, agent_field: str, background_tasks: Ba
     if ts is None or not nonce:
         raise HTTPException(status_code=400, detail="Missing 'timestamp' or 'nonce'")
     conn = db()
+    if is_frozen(conn):
+        conn.close()
+        raise HTTPException(status_code=503, detail="System frozen by Administrator")
+        
     agent = conn.execute("SELECT * FROM agents WHERE id = ?", (agent_id,)).fetchone()
     if agent and "status" in agent.keys() and agent["status"] == "blocked":
         conn.close()
         raise HTTPException(status_code=403, detail="Agent is blocked by Administrator")
         
-    if agent:
-        if "@" in agent_id:
-            uuid_part, domain_part = agent_id.split("@", 1)
-            peer_row = conn.execute("SELECT url FROM peers WHERE name = ? AND status='active'", (domain_part,)).fetchone()
-            if peer_row and background_tasks:
-                background_tasks.add_task(update_external_agent_cache, agent_id, peer_row["url"])
-    else:
-        if "@" in agent_id:
-            uuid_part, domain_part = agent_id.split("@", 1)
-            peer_row = conn.execute("SELECT url, reputation FROM peers WHERE name = ? AND status='active'", (domain_part,)).fetchone()
-            if peer_row:
-                peer_url = peer_row["url"]
-                peer_rep = peer_row["reputation"]
-                try:
-                    resp = requests.get(f"{peer_url}/peer/agent/{agent_id}", timeout=1.5)
-                    if resp.status_code == 200:
-                        agent_data = resp.json()
-                        home_rep = agent_data.get("reputation", 1.0)
-                        effective_rep = home_rep * peer_rep
-                        conn.execute("INSERT OR REPLACE INTO agents (id, name, public_key, capabilities, registered_at, reputation) VALUES (?, ?, ?, ?, ?, ?)",
-                            (agent_id, agent_data["name"], agent_data["public_key"], json.dumps(agent_data["capabilities"]), time.time(), effective_rep))
-                        conn.commit()
-                        agent = conn.execute("SELECT * FROM agents WHERE id = ?", (agent_id,)).fetchone()
-                except Exception:
-                    pass
-        if not agent:
-            conn.close()
-            raise HTTPException(status_code=404, detail="Agent not found")
+    if not agent:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Agent not found")
             
     try:
         pub = Ed25519PublicKey.from_public_bytes(bytes.fromhex(agent["public_key"]))
@@ -456,15 +438,7 @@ async def verify_action(request: Request, agent_field: str, background_tasks: Ba
             retryable=False,
             body_sha256_received=hashlib.sha256(raw).hexdigest()
         )
-    try:
-        _check_freshness_and_nonce(conn, ts, nonce)
-        conn.commit()
-    except HTTPException:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
-    return data, agent
+    return conn, data, agent, ts, nonce
 
 @app.on_event("startup")
 async def startup():
@@ -481,7 +455,7 @@ async def register_agent(request: Request):
     if not public_key_hex or ts is None or not nonce:
         raise HTTPException(status_code=400, detail="Missing 'public_key', 'timestamp' or 'nonce'")
     
-    # Verify memory-hard Proof of Work
+    # Verify memory-hard Proof of Work (CPU, 0 DB Locks)
     max_pow_age = 600
     try:
         tsf = float(ts)
@@ -497,7 +471,7 @@ async def register_agent(request: Request):
             max_pow_age_seconds=max_pow_age
         )
 
-    # Compute actual scrypt hash to check difficulty
+    # Compute actual scrypt hash to check difficulty (CPU, 0 DB Locks)
     password = f"{public_key_hex}{json.dumps(capabilities)}{ts}{nonce}".encode("utf-8")
     salt = b"node0-sybil-proof-salt"
     try:
@@ -544,39 +518,37 @@ async def register_agent(request: Request):
         pub.verify(signature, raw)
     except InvalidSignature:
         raise HTTPException(status_code=401, detail="Invalid signature (proof of possession failed)")
+
+    agent_id = f"{public_key_hex}@{MY_DOMAIN}"
+    name = generate_agent_name(public_key_hex, capabilities)
+    KNOWN_TEST_NAMES = {"oriion-460481", "nexion-4f6340", "zepeon-fc9531", "veleon-10d10b"}
+    initial_reputation = 1.0 if name in KNOWN_TEST_NAMES else 0.0
+    now = time.time()
+
+    # Single Atomic Database Connection & Transaction
     conn = db()
     if is_frozen(conn):
         conn.close()
         raise HTTPException(status_code=503, detail="System frozen by Administrator")
-    if conn.execute("SELECT 1 FROM agents WHERE public_key = ?", (public_key_hex,)).fetchone():
-        conn.close()
-        raise HTTPException(status_code=409, detail="public_key already registered")
-    try:
-        _check_freshness_and_nonce(conn, ts, nonce)
-        conn.commit()
-    except HTTPException:
-        conn.close()
-        raise
-    agent_id = f"{public_key_hex}@{MY_DOMAIN}"
-    name = generate_agent_name(public_key_hex, capabilities)
-    
-    # Abwärtskompatibilität: bekannte Test-Agenten starten mit 1.0 Reputation, neue KIs mit 0.0 (Web of Trust)
-    KNOWN_TEST_NAMES = {"oriion-460481", "nexion-4f6340", "zepeon-fc9531", "veleon-10d10b"}
-    initial_reputation = 1.0 if name in KNOWN_TEST_NAMES else 0.0
-    
+
     try:
         conn.execute("BEGIN IMMEDIATE")
+        if conn.execute("SELECT 1 FROM agents WHERE public_key = ?", (public_key_hex,)).fetchone():
+            raise HTTPException(status_code=409, detail="public_key already registered")
+        _check_freshness_and_nonce(conn, ts, nonce)
         conn.execute("INSERT INTO agents (id, name, public_key, capabilities, registered_at, reputation) VALUES (?, ?, ?, ?, ?, ?)",
-            (agent_id, name, public_key_hex, json.dumps(capabilities), time.time(), initial_reputation))
-        conn.execute("INSERT INTO wallets (agent_id, balance_sats, daily_limit_sats, spent_today_sats, last_reset_at) VALUES (?, ?, ?, ?, ?)",
-            (agent_id, 5000, 1000, 0, time.time()))
+            (agent_id, name, public_key_hex, json.dumps(capabilities), now, initial_reputation))
+        ensure_wallet_exists(conn, agent_id)
         conn.commit()
     except Exception as e:
         conn.rollback()
-        conn.close()
+        if isinstance(e, HTTPException):
+            raise e
         raise HTTPException(status_code=500, detail=str(e))
-    conn.close()
-    return {"agent_id": agent_id, "name": name, "public_key": public_key_hex, "initial_reputation": initial_reputation}
+    finally:
+        conn.close()
+        
+    return {"status": "registered", "agent_id": agent_id, "name": name, "capabilities": capabilities}
 
 @app.get("/agent/{agent_id}")
 async def get_agent(agent_id: str):
@@ -751,46 +723,50 @@ async def list_claims():
 @app.post("/knowledge/share")
 @app.post("/v1/knowledge/share")
 async def share_knowledge(request: Request, background_tasks: BackgroundTasks):
-    data, author_row = await verify_action(request, "author", background_tasks)
+    conn, data, author_row, ts, nonce = await verify_action(request, "author", background_tasks)
     topic = data.get("topic")
     content = data.get("content")
     if not topic or not isinstance(topic, str):
+        conn.close()
         raise HTTPException(status_code=400, detail="Missing 'topic'")
     if not content or not isinstance(content, str):
+        conn.close()
         raise HTTPException(status_code=400, detail="Missing 'content'")
     if len(topic) > 200:
+        conn.close()
         raise HTTPException(status_code=400, detail="topic too long (max 200 chars)")
     if len(content) > 8000:
-        raise HTTPException(status_code=400, detail="content too long (max 8000 chars)")
-    author = data["author"]
-    conn = db()
-    if is_frozen(conn):
         conn.close()
-        raise HTTPException(status_code=503, detail="System frozen by Administrator")
+        raise HTTPException(status_code=400, detail="content too long (max 8000 chars)")
+
+    author = data["author"]
     kid = hashlib.sha256(content.encode("utf-8")).hexdigest()
     raw_bytes = await request.body()
     raw_payload = raw_bytes.decode("utf-8")
     sig_b64 = request.headers.get("X-Signature")
-    ts = data.get("timestamp")
-    nonce = data.get("nonce")
     now = time.time()
+
+    # Pure CPU Triple Extraktion VOR dem Schreib-Lock (0 DB Locks)
+    triples = extract_triples_from_jsonld(kid, author, content)
+    prepared_triples = [(str(uuid.uuid4()), kid, s, p, o) for s, p, o in triples]
+
     try:
         conn.execute("BEGIN IMMEDIATE")
+        _check_freshness_and_nonce(conn, ts, nonce)
         conn.execute("INSERT INTO knowledge (id, author, topic, content, created_at, updated_at, signature, timestamp, nonce, raw_payload) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (kid, author, topic, content, now, now, sig_b64, ts, nonce, raw_payload))
-        
-        # Extract and save triples
-        triples = extract_triples_from_jsonld(kid, author, content)
-        for s, p, o in triples:
-            tid = str(uuid.uuid4())
+        for tid, kid_id, s, p, o in prepared_triples:
             conn.execute("INSERT INTO triples (id, knowledge_id, subject, predicate, object) VALUES (?, ?, ?, ?, ?)",
-                (tid, kid, s, p, o))
+                (tid, kid_id, s, p, o))
         conn.commit()
     except Exception as e:
         conn.rollback()
-        conn.close()
+        if isinstance(e, HTTPException):
+            raise e
         raise HTTPException(status_code=500, detail=str(e))
-    conn.close()
+    finally:
+        conn.close()
+
     return {"knowledge_id": kid, "author": author_row["name"], "topic": topic, "content": content}
 
 @app.get("/knowledge/graph/query")
