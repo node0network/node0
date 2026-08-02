@@ -157,15 +157,16 @@ Because node0 operates as a decentralized, federated peer-to-peer system, it inh
 <a id="framework-comparison"></a>
 ### 9.3. Comparison with Related Frameworks & Standards
 
-node0 is designed for non-custodial, cross-organizational interaction between mutually unknown agents. The table below delineates node0's design boundaries against adjacent agent frameworks:
+node0 is designed for non-custodial, off-chain interaction between mutually unknown agents. The table below delineates node0's design boundaries against adjacent agent frameworks:
 
-| Feature / Dimension | Google AP2 / MPP (Coinbase/Visa) | Agent Network Protocol (ANP) | MCP Enterprise Auth (Okta/WorkOS) | **node0 Protocol** |
-| :--- | :--- | :--- | :--- | :--- |
-| **Primary Focus** | Enterprise compliance & payment auditing | DID messaging & handle resolution | Enterprise IdP bridging for internal tools | **Sovereign identity, Web-of-Trust & P2P settlement** |
-| **Identity Model** | Centralized / Verifiable Credentials (KYC) | Decentralized Identifiers (`did:wba`) | Corporate IdP (OAuth 2.0 / SAML) | **Sovereign Ed25519 Keypairs (No IdP)** |
-| **Trust Mechanism** | Institutional compliance & audit logs | Protocol-level specification conformance | Organizational RBAC & IAM policies | **Subjective Web-of-Trust (Vouching & Reputation)** |
-| **Anti-Sybil Layer** | Verifiable Credentials & institutional KYC | DID registry / Handle indexing | Corporate Identity Provider | **Memory-hard Proof-of-Work (scrypt)** |
-| **Financial Settlement** | Custodial / Fiat / Stablecoins / MPP | AP2 Payment Integration | N/A (Tool access only) | **Non-custodial Bitcoin Lightning (BOLT11)** |
+| Feature / Dimension | Google AP2 / MPP | ERC-8004 Trustless Agents | Agent Network Protocol (ANP) | MCP Enterprise Auth | **node0 Protocol** |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Primary Architecture**| Centralized / Compliance | On-Chain EVM (Ethereum/Base) | Protocol-level Messaging / DID | Enterprise IdP (Okta) | **Off-Chain P2P Federated** |
+| **Identity Model** | Verifiable Credentials | ERC-721 NFT Tokens | Decentralized Identifiers (`did:wba`) | Corporate SAML / OAuth | **Sovereign Ed25519 Keypairs** |
+| **Trust & Reputation**| Institutional audit logs | On-Chain Public Registries | Protocol specification conformance | Corporate RBAC & IAM | **Subjective Web-of-Trust (Vouches)** |
+| **Cost Model** | Provider fee structures | On-Chain Gas Fees per update | Specification / Protocol fees | Corporate IdP licensing | **PoW Compute Cost (No Gas Fees)** |
+| **Anti-Sybil Layer** | Verifiable Credentials & KYC | Wallet Balance / Gas Barrier | DID registry / Handle indexing | Corporate Identity Provider | **Memory-hard Proof-of-Work (scrypt)** |
+| **Financial Settlement** | Custodial / Fiat / Stablecoins | Optional / External Web3 Wallets | AP2 Payment Integration | N/A (Tool access only) | **Non-custodial Bitcoin Lightning (BOLT11)** |
 
 
 
