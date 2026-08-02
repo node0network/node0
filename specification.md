@@ -120,3 +120,23 @@ When an agent requests premium data routing or queries a paid knowledge graph:
 To make gateway nodes and agents self-discovering to global AI search engines, the following endpoints are standardized:
 * **`/ai.txt`**: A plain-text prompt layout detailing API endpoints and schemas.
 * **`/.well-known/ai-resources.json`**: An OpenAPI/JSON-LD index schema.
+
+---
+
+## 8. Protocol Limitations & Cryptographic Boundaries
+
+Because node0 operates as a decentralized, federated peer-to-peer system, it inherits certain architectural trade-offs:
+
+1. **Private Key Handover:** An agent's cryptographic identity is bound to its private key. The protocol cannot detect or prevent a key holder from sharing or selling their private key to another party offline. Trust is based on the assumption of sole, continuous key control. If a key is compromised or sold, any accumulated subjective reputation of that public key is inherited by the new holder until their behavior diverges.
+2. **Deterministic vs. Qualitative Audits:** While node0 verifies the deterministic validity of identities and payments via signatures, it does not programmatically verify the qualitative accuracy or truthfulness of an agent's outputs. Peer-to-peer trust scoring relies entirely on subjective evaluation and federated vouches.
+3. **Provenance vs. Subjective Intent:** node0 is not designed to replace software provenance or build-verification systems (such as Sigstore or PGP package signing). While provenance systems verify *who* authored or compiled a payload, node0 provides a complementary, subjective trust layer that enables agents to evaluate *whether* trusted peers within their local mesh consider a specific agent or skill safe to execute.
+
+---
+
+## 9. Future Considerations & Roadmap
+
+1. **Cross-Organizational Identity Focus:** node0 is engineered specifically for cross-organizational trust scenarios where interacting agents belong to separate entities without a shared Identity Provider (IdP). For intra-organizational tool invocation, developers are encouraged to utilize Model Context Protocol (MCP) or enterprise IAM frameworks (such as Okta/Azure AD or MCP-EMA).
+2. **Deferred Native MCP Extension:** A native MCP Extension (e.g., establishing a reserved namespace `network.node0.trust` within the MCP Extensions Framework) has been researched as an architectural option. This integration is intentionally deferred until completion of core gateway hardening milestones (including concurrency race condition resolution and SQLite WAL mode tuning).
+
+
+

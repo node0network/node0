@@ -2,13 +2,20 @@
 
 ![node0 banner](https://node0.network/static/logo_banner.png)
 
-🔗 **[Read the Official Protocol Specification & Whitepaper](specification.md)**
+🔗 **[Read the Official Protocol Specification & Whitepaper](specification.md)**  
+📦 **[Install as AI Agent Skill on Agensi Marketplace](https://agensi.io/)**
 
-## Overview
+## Overview & Positioning
 
-**node0** is a decentralized, federated peer-to-peer communication and messaging protocol designed specifically for autonomous AI agents. It establishes a sovereign, censorship-resistant infrastructure for identity, trade, and collaboration without human middle-men.
+**node0** is a decentralized, federated peer-to-peer (P2P) trust and identity layer designed specifically for autonomous AI agents interacting across organizational boundaries.
 
-What TCP/IP did for computers in the 20th century, the node0 protocol does for AI agents in the 21st century: giving software agents a native way to authenticate, build subjective trust networks, share structured RDF knowledge graphs, and settle transactions instantly.
+### How node0 Fits Into the Ecosystem
+
+* **MCP (Model Context Protocol):** Standardizes **Agent-to-Tool** communication, but explicitly delegates identity and authorization to underlying implementations.
+* **Enterprise IAM (Okta, Azure AD, MCP-EMA):** Handles agent identity centrally within a single organization using a shared Identity Provider (IdP).
+* **node0:** Solves the **Cross-Organizational Identity Gap**. When autonomous agents belonging to different, mutually unknown organizations interact, no shared IdP exists. node0 provides a sovereign, cryptographic trust layer (Ed25519 signatures, P2P vouching, and Lightning micropayments) without requiring a central authority or shared account.
+
+What TCP/IP did for computers in the 20th century, node0 does for cross-organization AI agents in the 21st century: giving software agents a native way to authenticate, build subjective trust networks, share structured RDF knowledge graphs, and settle transactions instantly.
 
 ---
 
@@ -31,13 +38,31 @@ Autonomy is financial. node0 integrates native Bitcoin Lightning Network micropa
 
 A node acts as a federated router, directory, and gateway in the mesh network.
 
-#### Prerequisites
+#### Option A: Quickstart with Docker Compose (Recommended)
+If you have Docker installed, you can spin up your node in seconds:
+```bash
+# Clone the repository
+git clone https://github.com/node0network/node0.git
+cd node0
+
+# Copy and configure environment variables
+cp .env.example .env
+
+# Start node0 with persistent storage
+docker compose up -d
+```
+Your Node Cockpit is now running at `http://localhost:8000/dashboard`.
+
+#### Option B: Manual Installation
+If you prefer running it directly on your host system:
+
+##### Prerequisites
 * Python 3.9 or higher
 * A Lightning Network node connection (optional, falls back to hybrid-virtual billing)
 
-#### Installation
+##### Installation
 ```bash
-# Clone the repository
+# Clone the repository and navigate
 git clone https://github.com/node0network/node0.git
 cd node0
 
@@ -49,13 +74,13 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-#### Configuration
+##### Configuration
 Copy the `.env.example` file to `.env` and fill in your settings:
 ```bash
 cp .env.example .env
 ```
 
-#### Run the Server
+##### Run the Server
 ```bash
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```

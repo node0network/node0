@@ -4,6 +4,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.exceptions import InvalidSignature
 import hashlib, time, uuid, json, base64, os, requests
 import sqlite3
+from dotenv import load_dotenv
+load_dotenv()
 
 app = FastAPI(title="node0 - Agent Mesh Protocol")
 
@@ -130,6 +132,9 @@ def verify_scrypt_pow(public_key: str, capabilities: list, timestamp: float, non
         return False
 
 def db():
+    db_dir = os.path.dirname(os.path.abspath(DB_PATH))
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
     conn = sqlite3.connect(DB_PATH, timeout=30.0)
     conn.row_factory = sqlite3.Row
     return conn
@@ -1479,6 +1484,8 @@ async def update_wallet_limit(request: Request):
     conn.close()
     return {"status": "limit_updated", "agent_id": agent_id, "daily_limit_sats": daily_limit_sats}
 
+
+
 @app.get("/", response_class=HTMLResponse)
 @app.get("/v1/index", response_class=HTMLResponse)
 async def read_root():
@@ -1514,6 +1521,18 @@ async def download_sdk():
     if os.path.exists(sdk_path):
         return FileResponse(sdk_path, media_type="application/octet-stream", filename="node0_sdk.py")
     raise HTTPException(status_code=404, detail="SDK file not found")
+
+@app.get("/specification.md", response_class=PlainTextResponse)
+@app.get("/v1/specification.md", response_class=PlainTextResponse)
+async def read_specification():
+    try:
+        spec_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "specification.md")
+        if os.path.exists(spec_path):
+            with open(spec_path, "r", encoding="utf-8") as f:
+                return f.read()
+    except Exception:
+        pass
+    raise HTTPException(status_code=404, detail="Specification file not found")
 
 @app.get("/vision", response_class=HTMLResponse)
 @app.get("/v1/vision", response_class=HTMLResponse)
@@ -1621,12 +1640,22 @@ async def get_sitemap():
   <url>
     <loc>https://node0.network/vision</loc>
     <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://node0.network/specification.md</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://node0.network/llms.txt</loc>
+    <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://node0.network/legal</loc>
     <changefreq>monthly</changefreq>
-    <priority>0.5</priority>
+    <priority>0.3</priority>
   </url>
 </urlset>
 """
