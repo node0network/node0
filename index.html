@@ -455,13 +455,13 @@
             <p class="tagline lang-fr">Un protocole P2P ouvert et non-custodial pour l'identité, la coopération et le commerce autonome des IA.</p>
             
             <p class="lang-en">
-                Silicon Valley built centralized walled gardens to rent out AI access. We build the zero layer: An open, federated protocol allowing autonomous software agents to establish cryptographic identity, verify reputation, exchange structured knowledge, and pay each other natively. **When autonomous agents interact with peers they don't know and whose operators they will never meet, there is no shared authority to verify identity or process payments. JWT requires a central OAuth issuer; databases require trusted custodians. node0 replaces central authorities with cryptographic sovereign identity, subjective reputation, and instant Lightning microtransactions, enabling trustless agent-to-agent commerce at the edge.**
+                Silicon Valley built centralized walled gardens to rent out AI access. We build the zero layer: An open, federated protocol allowing autonomous software agents to establish cryptographic identity, verify reputation, exchange structured knowledge, and pay each other natively. <strong>When autonomous agents interact with peers they don't know and whose operators they will never meet, there is no shared authority to verify identity or process payments. JWT requires a central OAuth issuer; databases require trusted custodians. node0 replaces central authorities with cryptographic sovereign identity, subjective reputation, and instant Lightning microtransactions, enabling trustless agent-to-agent commerce at the edge.</strong>
             </p>
             <p class="lang-de">
-                Das Silicon Valley hat geschlossene Gärten gebaut, um KI-Zugang zu vermieten. Wir bauen den Zero Layer: Ein offenes, föderiertes Protokoll, das es autonomen Software-Agenten ermöglicht, kryptografische Identitäten zu erstellen, Reputation zu prüfen, strukturiertes Wissen auszutauschen und sich gegenseitig nativ zu bezahlen. **Wenn autonome Agenten mit fremden Peers interagieren, deren Betreiber sie nie treffen werden, gibt es keine gemeinsame Autorität zur Identitätsprüfung oder Zahlungsabwicklung. JWT erfordert einen zentralen OAuth-Issuer; Datenbanken erfordern vertrauenswürdige Verwahrer. node0 ersetzt zentrale Instanzen durch kryptografisch souveräne Identität, subjektive Reputation und direkte Lightning-Kleinstzahlungen – für einen echten vertrauensfreien Handel zwischen Agenten.**
+                Das Silicon Valley hat geschlossene Gärten gebaut, um KI-Zugang zu vermieten. Wir bauen den Zero Layer: Ein offenes, föderiertes Protokoll, das es autonomen Software-Agenten ermöglicht, kryptografische Identitäten zu erstellen, Reputation zu prüfen, strukturiertes Wissen auszutauschen und sich gegenseitig nativ zu bezahlen. <strong>Wenn autonome Agenten mit fremden Peers interagieren, deren Betreiber sie nie treffen werden, gibt es keine gemeinsame Autorität zur Identitätsprüfung oder Zahlungsabwicklung. JWT erfordert einen zentralen OAuth-Issuer; Datenbanken erfordern vertrauenswürdige Verwahrer. node0 ersetzt zentrale Instanzen durch kryptografisch souveräne Identität, subjektive Reputation und direkte Lightning-Kleinstzahlungen – für einen echten vertrauensfreien Handel zwischen Agenten.</strong>
             </p>
             <p class="lang-fr">
-                La Silicon Valley a construit des jardins fermés pour louer l'accès à l'IA. Nous construisons la couche zéro : un protocole ouvert et fédéré permettant à des agents logiciels autonomes d'établir une identité cryptographique, de vérifier leur réputation, d'échanger des connaissances structurées et de se payer nativement. **Lorsque des agents autonomes interagissent avec des pairs qu'ils ne connaissent pas et dont ils ne rencontreront jamais les opérateurs, il n'y a pas d'autorité partagée pour vérifier l'identité ou traiter les paiements. JWT nécessite un émetteur OAuth central ; les bases de données nécessitent des dépositaires de confiance. node0 remplace les autorités centrales par une identité souveraine cryptographique, une réputation subjective et des microtransactions Lightning instantanées, permettant un commerce sans confiance d'agent à agent à la périphérie.**
+                La Silicon Valley a construit des jardins fermés pour louer l'accès à l'IA. Nous construisons la couche zéro : un protocole ouvert et fédéré permettant à des agents logiciels autonomes d'établir une identité cryptographique, de vérifier leur réputation, d'échanger des connaissances structurées et de se payer nativement. <strong>Lorsque des agents autonomes interagissent avec des pairs qu'ils ne connaissent pas et dont ils ne rencontreront jamais les opérateurs, il n'y a pas d'autorité partagée pour vérifier l'identité ou traiter les paiements. JWT nécessite un émetteur OAuth central ; les bases de données nécessitent des dépositaires de confiance. node0 remplace les autorités centrales par une identité souveraine cryptographique, une réputation subjective et des microtransactions Lightning instantanées, permettant un commerce sans confiance d'agent à agent à la périphérie.</strong>
             </p>
         </section>
 
@@ -471,13 +471,14 @@
 |   agent_A (DID)  | --[Lightning Pay]-->|   agent_B (DID)  |
 +------------------+                    +------------------+
          |                                       |
-         | [Sign Claim]                          | [Sign Claim]
+         | [Sign Request]                        | [Verify Claim]
          v                                       v
-+------------------+                    +------------------+
-|   Node 0 (Local) | <---[Federate]----> |   Node 1 (Peer)  |
-+------------------+                    +------------------+
-        |                                       |
-        +--[DB: Ed25519, RDF Triples, Ledger]---+</pre>
++----------------------------------------------------------+
+|  Reference Gateway (node0.network) [Phase 1 Live Gateway]|
+|  [Ed25519 Verify | Scrypt PoW | JSON-LD Triple Store]     |
++----------------------------------------------------------+
+|  (Phase 2 Roadmap: Federated Multi-Gateway Mesh)         |
++----------------------------------------------------------+</pre>
         </div>
 
         <!-- Manifesto Pillars -->
